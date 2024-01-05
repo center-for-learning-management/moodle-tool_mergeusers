@@ -83,8 +83,8 @@ jobs:
 
       - name: Create Pull Request
         run: |
-            gh repo set-default  center-for-learning-management/eduvidual-src
-            gh pr create --title "Upstream Moodle Pull Request" --body "Upstream changes by https://github.com/moodle/moodle/tree/${{ env.UPSTREAM_BRANCH }} created a pull request" -B ${{ env.PR_BASE_BRANCH }} --reviewer ${{ env.PR_REVIEWERS }} --assignee ${{ env.PR_ASSIGNEES }}|true
+            gh repo set-default  center-for-learning-management/moodle-tool_mergeusers
+            gh pr create --title "Upstream Moodle Pull Request" --body "Upstream changes by https://github.com/jpahullo/moodle-tool_mergeusers/tree/${{ env.UPSTREAM_BRANCH }} created a pull request" -B ${{ env.PR_BASE_BRANCH }} --reviewer ${{ env.PR_REVIEWERS }} --assignee ${{ env.PR_ASSIGNEES }}|true
         env:
           GITHUB_TOKEN: ${{  secrets.EDUVIDUAL_BOT_GITHUB_ACTION_PAT }}
     
