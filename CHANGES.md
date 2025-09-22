@@ -1,5 +1,24 @@
 # Release notes
 
+## 2025092100
+
+1. 2025-09-21: improvement: #372: add output from last steps of regrading and reaggregation of course completions.
+   Also, reaggregation of course completion now happens inside the time of the merge process, and not after as before.
+2. 2025-09-21: task: #362: remove YUI code. Simplified javascript code to the maximum.
+
+
+## 2025091800
+
+1. 2025-09-18: fix: #371: listuserfields.php CLI scripts supports tables that does not exist on the XML database schema.
+
+
+## 2025090401
+
+1. 2025-09-04: fix: #367: database settings tab did no show properly
+   the default nor calculated settings.
+2. 2025-09-04: fix: #369: add PHP attributes to hook.
+
+
 ## 2025082301
 
 1. 2025-08-23: improvement: #360: new class added to manage session-based
