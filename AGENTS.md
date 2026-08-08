@@ -221,6 +221,18 @@ than extend the gap.
   gets silently stripped as a comment by any editor-based git flow (merge
   commit messages, interactive rebase, `git commit` without `-m`) - GitHub
   itself also renders it more reliably with the leading space.
+- **Once a commit has been reviewed, address further feedback with a new
+  commit, not an amend.** A commit is "reviewed" once a human (Jordi) or an
+  automated reviewer (e.g. GitHub Copilot on a PR) has looked at it and left
+  feedback on it. Any later round of feedback on that same ticket/PR —
+  whether from Jordi or from an automated reviewer — gets its own new
+  commit on top, so the history visibly shows the code being improved in
+  response to review, instead of silently rewriting what was already
+  reviewed. Commits that have not yet been reviewed by anyone are still
+  fine to amend freely (e.g. while iterating before ever pushing, or between
+  pushes with no review in between). If it is unclear whether a change
+  belongs in a new commit or can still amend an existing one, ask rather
+  than assume.
 - **`CHANGES.md` attribution.** If a GitHub issue or PR being incorporated is
   linked to a user other than Jordi (the maintainer), the `CHANGES.md` entry
   at the point that actually incorporates their issue/commits must credit
@@ -235,6 +247,19 @@ than extend the gap.
 - Plugin version is a Moodle-style timestamp `YYYYMMDDvv`, tracked in both
   `version.php` and `CHANGES.md`; releases happen roughly monthly to
   bimonthly.
+- **Git tags for versions.** Every time `version.php`'s `$plugin->version` is
+  bumped, tag that exact number as an *annotated* tag (`git tag -a <version>
+  <commit> -m ""`, never a lightweight one) — matching this repository's
+  existing tag history. Create it yourself as part of finishing the PR that
+  contains the bump, without waiting to be asked. Where exactly to place it:
+  - If the version-bump commit reaches the target branch through a merge
+    commit (the normal case for a PR), tag the **merge commit** itself, not
+    the feature-branch commit that actually changed `version.php`.
+  - If the version-bump commit is committed **directly** to the target
+    branch (no separate PR/merge involved), tag that commit directly.
+  As with any other ref, creating the tag locally is fine on its own, but
+  **never push it** (`git push origin <tag>` / `--tags`) unless explicitly
+  asked to — same care as pushing a branch or commit.
 - Releases are pushed to the Moodle plugins directory manually. The
   automated `moodle-release.yml` workflow (tag push -> `local_plugins_add_
   version` webservice call) was removed after Moodle's migration from the
