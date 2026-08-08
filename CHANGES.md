@@ -3,6 +3,43 @@
 If not specified, each change is performed in the version date.
 It means that if version is YYYYMMDDOO, the change was performed on YYYY-MM-DD.
 
+## 2026080802
+
+1. improvement: #402: every checkbox setting on the plugin's admin settings page
+   (suspend old user, transactions only, search by profile fields, unique key to
+   maintain, enable ad-hoc merge) is now rendered as a toggle switch, matching core's
+   own "Turn editing on" switch and the notification preferences page - a new
+   `toggle_setting` class reuses core's own `form-switch`/`form-check-input` markup;
+   no JavaScript, no core markup patched, only a different template for what was
+   already a plain checkbox.
+
+## 2026080801
+
+1. bugfix: #402: searching (or the old/new-user advanced form) no longer fatals with
+   a `TypeError` when the submitted field was a custom profile field that another
+   administrator disabled, or deselected from the allow-list, between the page
+   loading and being submitted (e.g. on a plain browser refresh). Redirects back to
+   the search page instead, with a dismissible notice naming the field that is no
+   longer available when it can still be resolved.
+
+## 2026080800
+
+1. improvement: #402: profile-field search is now gated by its own master
+   switch, `tool_mergeusers/searchbyprofilefieldsenabled` (off by default),
+   separate from the field allow-list itself. This avoids overloading the
+   allow-list's emptiness with dual meaning ("nothing selected yet" vs.
+   "deliberately disabled"): the multiselect stays a plain list of fields,
+   and the toggle alone decides whether it is consulted at all.
+
+## 2026080704
+
+1. improvement: #402: allow searching for a user to merge by a custom user
+   profile field (e.g. an institution's "employee ID" field), in addition to
+   the existing username/email/etc. search. Which profile fields are
+   searchable is opt-in via a new `tool_mergeusers/searchbyprofilefields`
+   setting (empty by default). Originally proposed in #231. Thanks to
+   @Tsheke for their contributions.
+
 ## 2026080703
 
 1. cleanup: #414: remove the `E_STRICT` reference in `cli/listuserfields.php`. `E_STRICT`

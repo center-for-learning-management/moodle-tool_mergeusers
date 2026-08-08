@@ -109,24 +109,49 @@ final class user_searcher {
                 break;
             // Search on all fields by default.
             default:
-                $where = '(' .
-                         $DB->sql_cast_to_char('id') . ' = :userid OR ' .
-                         $DB->sql_like('username', ':username', false, false)
-                         . ' OR ' .
-                         $DB->sql_like('firstname', ':firstname', false, false)
-                         . ' OR ' .
-                         $DB->sql_like('lastname', ':lastname', false, false)
-                         . ' OR ' .
-                         $DB->sql_like('email', ':email', false, false)
-                         . ' OR ' .
-                         $DB->sql_like('idnumber', ':idnumber', false, false)
-                         . ')';
-                $params['userid'] = $input;
-                $params['username'] = '%' . $input . '%';
-                $params['firstname'] = '%' . $input . '%';
-                $params['lastname'] = '%' . $input . '%';
-                $params['email'] = '%' . $input . '%';
-                $params['idnumber'] = '%' . $input . '%';
+                $allowedfields = array_keys(profile_fields::allowed());
+
+                if (is_numeric($searchfield) && in_array((int) $searchfield, $allowedfields, true)) {
+                    // Search on a specific custom user profile field, allow-listed at settings.
+                    $where = 'id IN (SELECT userid FROM {user_info_data} WHERE fieldid = :fieldid AND ' .
+                             $DB->sql_like('data', ':data', false, false) . ')';
+                    $params = ['fieldid' => (int) $searchfield, 'data' => '%' . $input . '%'];
+                } else {
+                    $where = '(' .
+                             $DB->sql_cast_to_char('id') . ' = :userid OR ' .
+                             $DB->sql_like('username', ':username', false, false)
+                             . ' OR ' .
+                             $DB->sql_like('firstname', ':firstname', false, false)
+                             . ' OR ' .
+                             $DB->sql_like('lastname', ':lastname', false, false)
+                             . ' OR ' .
+                             $DB->sql_like('email', ':email', false, false)
+                             . ' OR ' .
+                             $DB->sql_like('idnumber', ':idnumber', false, false)
+                             . ')';
+                    $params['userid'] = $input;
+                    $params['username'] = '%' . $input . '%';
+                    $params['firstname'] = '%' . $input . '%';
+                    $params['lastname'] = '%' . $input . '%';
+                    $params['email'] = '%' . $input . '%';
+                    $params['idnumber'] = '%' . $input . '%';
+
+                    // The "all fields" search also looks inside any custom user profile field
+                    // allow-listed at settings, via a subquery - never a JOIN, so no risk of
+                    // duplicate {user} rows.
+                    if (!empty($allowedfields)) {
+                        [$insql, $inparams] = $DB->get_in_or_equal($allowedfields, SQL_PARAMS_NAMED, 'apf');
+                        $where .= ' OR id IN (SELECT userid FROM {user_info_data} WHERE fieldid ' . $insql .
+                                  ' AND ' . $DB->sql_like('data', ':pfdata', false, false) . ')';
+                        $params += $inparams;
+                        $params['pfdata'] = '%' . $input . '%';
+                    }
+
+                    // Parenthesise the whole OR expression: AND binds tighter than OR in SQL, so
+                    // without this the "AND deleted = :deleted" appended below would only apply to
+                    // the last OR term, letting deleted users leak back into the results.
+                    $where = '(' . $where . ')';
+                }
                 break;
         }
 
@@ -162,11 +187,37 @@ final class user_searcher {
 
         // Check for existing user matching the specified criteria.
         $message = '';
-        try {
-            $user = $DB->get_record('user', [$field => $value, 'deleted' => 0], '*', MUST_EXIST);
-        } catch (Exception $e) {
-            $message = get_string('invaliduser', 'tool_mergeusers', ['field' => $field, 'value' => $value]);
-            $user = null;
+        if (is_numeric($field)) {
+            // The field is a custom user profile field id. Reject it outright if it
+            // is not allow-listed, rather than falling back to any other search
+            // strategy; and require an *exact* match on a single user - unlike
+            // search_users(), which does partial (LIKE) matching and could
+            // otherwise silently resolve to the wrong one of several users sharing
+            // an overlapping profile-field value.
+            $fieldid = (int) $field;
+            if (!array_key_exists($fieldid, profile_fields::allowed())) {
+                $message = get_string('invaliduser', 'tool_mergeusers', ['field' => $field, 'value' => $value]);
+                $user = null;
+            } else {
+                try {
+                    $user = $DB->get_record_sql(
+                        'SELECT u.* FROM {user} u JOIN {user_info_data} d ON d.userid = u.id ' .
+                        'WHERE d.fieldid = :fieldid AND d.data = :data AND u.deleted = 0',
+                        ['fieldid' => $fieldid, 'data' => $value],
+                        MUST_EXIST,
+                    );
+                } catch (Exception $e) {
+                    $message = get_string('invaliduser', 'tool_mergeusers', ['field' => $field, 'value' => $value]);
+                    $user = null;
+                }
+            }
+        } else {
+            try {
+                $user = $DB->get_record('user', [$field => $value, 'deleted' => 0], '*', MUST_EXIST);
+            } catch (Exception $e) {
+                $message = get_string('invaliduser', 'tool_mergeusers', ['field' => $field, 'value' => $value]);
+                $user = null;
+            }
         }
 
         return [$user, $message];
