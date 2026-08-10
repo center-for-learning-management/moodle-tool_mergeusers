@@ -211,6 +211,13 @@ if ($ADMIN->fulltree) {
     ));
 
     $generalsettings->add(new toggle_setting(
+        'tool_mergeusers/mergepicture',
+        get_string('mergepicture', 'tool_mergeusers'),
+        get_string('mergepicture_desc', 'tool_mergeusers'),
+        1
+    ));
+
+    $generalsettings->add(new toggle_setting(
         'tool_mergeusers/enableadhocmerge',
         get_string('enableadhocmerge', 'tool_mergeusers'),
         get_string('enableadhocmerge_desc', 'tool_mergeusers'),
