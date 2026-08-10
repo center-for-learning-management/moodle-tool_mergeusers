@@ -3,6 +3,22 @@
 If not specified, each change is performed in the version date.
 It means that if version is YYYYMMDDOO, the change was performed on YYYY-MM-DD.
 
+## 2026081001
+
+1. feature: #377: the profile picture of the two merged users is now merged
+   too, following the "Keep new user's data" setting already used elsewhere to
+   resolve conflicts, with a new `tool_mergeusers/mergepicture` toggle to
+   disable it. Every outcome is logged on the merge's own persisted log.
+
+   This runs right after the merge has committed, before the removed user's
+   own picture is replaced by the generic "suspended" image, so a merge that
+   ends up rolled back never touches any picture, and a copy failure never
+   leaves the kept user with a broken picture reference. It also recognises
+   when a user's current picture is itself a leftover copy of that
+   "suspended" placeholder from an earlier merge, and treats it as if there
+   were no picture at all, so it never gets propagated onto an active
+   account.
+
 ## 2026080802
 
 1. improvement: #402: every checkbox setting on the plugin's admin settings page

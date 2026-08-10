@@ -77,6 +77,8 @@ final class logger {
      * @param array|null $tohint optional ['field' => ..., 'value' => ...] describing what a gathering searched for
      * when $touserid could not be resolved (id <= 0). Ignored otherwise.
      * @param array|null $fromhint same as $tohint, for $fromuserid.
+     * @param int|null $suspendedplaceholderpicture the user.picture value set on $fromuserid when its own picture
+     * was overwritten with the generic "suspended" placeholder image, or null when that did not happen.
      * @return bool|int false when could not insert the record; the log id when success.
      * @throws moodle_exception when log record cannot be inserted.
      */
@@ -88,6 +90,7 @@ final class logger {
         ?string $status = null,
         ?array $tohint = null,
         ?array $fromhint = null,
+        ?int $suspendedplaceholderpicture = null,
     ): bool|int {
         global $DB, $USER;
 
@@ -97,6 +100,7 @@ final class logger {
         $logdata = [
             'user_snapshots' => self::capture_user_snapshots($touserid, $fromuserid, $tohint, $fromhint),
             'actions' => $log,
+            'suspendedplaceholderpicture' => $suspendedplaceholderpicture,
         ];
 
         $record = new stdClass();
@@ -149,6 +153,7 @@ final class logger {
         $logdata = [
             'user_snapshots' => self::capture_user_snapshots($touserid, $fromuserid),
             'actions' => [],
+            'suspendedplaceholderpicture' => null,
         ];
 
         $record = new stdClass();
@@ -185,10 +190,13 @@ final class logger {
      * @param int $logid     the id of the log entry to update.
      * @param string $status the status: pending, inprogress, success, error.
      * @param array $log     list of actions performed for a successful merging; or errors on failure.
+     * @param int|null $suspendedplaceholderpicture the user.picture value set on the removed user when its own
+     * picture was overwritten with the generic "suspended" placeholder image; when null (the default), whatever
+     * value was already stored for this log entry is preserved unchanged.
      *
      * @return bool true on success, false otherwise.
      */
-    public function update_log_status(int $logid, string $status, array $log): bool {
+    public function update_log_status(int $logid, string $status, array $log, ?int $suspendedplaceholderpicture = null): bool {
         global $DB;
 
         try {
@@ -201,11 +209,13 @@ final class logger {
         }
 
         $existinglogdata = json_decode($existinglog->log, true);
+        $existingplaceholderpicture = $existinglogdata['suspendedplaceholderpicture'] ?? null;
 
         // Preserve user snapshots from the original log.
         $logdata = [
             'user_snapshots' => $existinglogdata['user_snapshots'] ?? null,
             'actions' => $log,
+            'suspendedplaceholderpicture' => $suspendedplaceholderpicture ?? $existingplaceholderpicture,
         ];
 
         $record = new stdClass();
@@ -215,6 +225,35 @@ final class logger {
         $record->timemodified = time();
 
         return $DB->update_record('tool_mergeusers', $record);
+    }
+
+    /**
+     * Gets the most recent log entry where $userid was the removed user ("fromuserid"), regardless of
+     * status, optionally excluding one specific log id.
+     *
+     * Excluding a log id matters when checking a user's merge history from within the processing of
+     * that very merge (e.g. a post-commit observer): that merge's own log row already exists by then,
+     * with the same fromuserid, and would otherwise be mistaken for a genuinely earlier one - while
+     * itself still lacking fields only populated later in that same observer call.
+     *
+     * @param int $userid
+     * @param int|null $excludelogid log id to exclude from consideration, if any.
+     * @return stdClass|null null when there is no such entry.
+     * @throws dml_exception
+     */
+    public function latest_as_fromuser(int $userid, ?int $excludelogid = null): ?stdClass {
+        global $DB;
+
+        $select = 'fromuserid = :fromuserid';
+        $params = ['fromuserid' => $userid];
+        if ($excludelogid !== null) {
+            $select .= ' AND id != :excludelogid';
+            $params['excludelogid'] = $excludelogid;
+        }
+
+        $records = $DB->get_records_select('tool_mergeusers', $select, $params, 'timemodified DESC', '*', 0, 1);
+
+        return $records ? reset($records) : null;
     }
 
     /**
