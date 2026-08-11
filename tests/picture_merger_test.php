@@ -372,6 +372,86 @@ final class picture_merger_test extends advanced_testcase {
     }
 
     /**
+     * A currently suspended removed user's own picture is never trusted, even when there is no
+     * recorded placeholder value at all for it (e.g. it was suspended for some other reason, or the
+     * record predates this plugin's version): being suspended alone is enough to disregard it, and
+     * this specific reason is logged on its own.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_picture
+     */
+    public function test_merge_picture_ignores_fromid_picture_when_suspended_without_any_placeholder_record(): void {
+        global $DB;
+
+        $this->set_user_picture($this->fromuser->id);
+        $DB->set_field('user', 'suspended', 1, ['id' => $this->fromuser->id]);
+
+        $actions = [];
+        picture_merger::merge_picture($this->touser->id, $this->fromuser->id, $actions);
+
+        $this->assertEquals(0, $DB->get_field('user', 'picture', ['id' => $this->touser->id]));
+        $this->assertTrue($this->log_contains($actions, 'nothing to merge'));
+        $this->assertTrue($this->log_contains(
+            $actions,
+            sprintf('user %d is suspended', $this->fromuser->id)
+        ));
+    }
+
+    /**
+     * Symmetric case: a currently suspended KEPT user's own picture is never trusted either, so it
+     * does not block a genuine picture coming from the removed user.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_picture
+     */
+    public function test_merge_picture_ignores_toid_picture_when_suspended_without_any_placeholder_record(): void {
+        global $DB;
+
+        $this->set_user_picture($this->touser->id);
+        $DB->set_field('user', 'suspended', 1, ['id' => $this->touser->id]);
+        $this->set_user_picture($this->fromuser->id);
+        $fromhash = $this->get_icon_contenthash($this->fromuser->id);
+
+        $actions = [];
+        picture_merger::merge_picture($this->touser->id, $this->fromuser->id, $actions);
+
+        $this->assertTrue($this->log_contains($actions, 'copied from user'));
+        $this->assertTrue($this->log_contains(
+            $actions,
+            sprintf('user %d is suspended', $this->touser->id)
+        ));
+        // The kept user's picture is now a byte-for-byte copy of the removed user's - a stronger,
+        // more meaningful proof that the copy actually happened than merely asserting the numeric
+        // "picture" value changed to *something* else would be.
+        $this->assertEquals($fromhash, $this->get_icon_contenthash($this->touser->id));
+    }
+
+    /**
+     * If an administrator lifts the removed user's suspension before this merge (so the new
+     * suspended-flag check alone would no longer catch it), the recorded placeholder value is still
+     * checked independently and still prevents the picture from being copied.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_picture
+     */
+    public function test_merge_picture_ignores_fromid_placeholder_even_after_suspension_lifted(): void {
+        global $DB;
+
+        $placeholderpicture = $this->set_user_picture($this->fromuser->id);
+        $this->record_past_placeholder_merge($this->fromuser->id, $placeholderpicture);
+        // An administrator reactivates the account before this merge runs.
+        $DB->set_field('user', 'suspended', 0, ['id' => $this->fromuser->id]);
+
+        $actions = [];
+        picture_merger::merge_picture($this->touser->id, $this->fromuser->id, $actions);
+
+        $this->assertEquals(0, $DB->get_field('user', 'picture', ['id' => $this->touser->id]));
+        $this->assertTrue($this->log_contains($actions, 'nothing to merge'));
+        // The reason is the recorded placeholder value, not the (now cleared) suspended flag.
+        $this->assertFalse($this->log_contains($actions, 'is suspended'));
+    }
+
+    /**
      * A user whose CURRENT picture happens to match an old placeholder record only in value, but that
      * merge was not successful, must still be treated as having a real, genuine picture: only a
      * successful past merge is trusted as evidence of a placeholder.

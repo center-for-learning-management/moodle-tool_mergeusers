@@ -117,6 +117,7 @@ $string['picturemergedisabled'] = 'Profile picture: merging is disabled by the "
 $string['picturemergefailed'] = 'Profile picture: could not copy from user {$a->fromid} to user {$a->toid}: {$a->error}. This does not affect the rest of the user data merge.';
 $string['picturemergefallbackkept'] = 'Profile picture: the user set to prevail has none; user {$a->toid}\'s own current picture is kept as a fallback.';
 $string['picturemergenopicture'] = 'Profile picture: neither user {$a->toid} nor user {$a->fromid} has a profile picture; nothing to merge.';
+$string['picturemergeuserskippedsuspended'] = 'Profile picture: user {$a->userid} is suspended; its own picture is not trusted for this decision.';
 $string['pluginname'] = 'Merge user accounts';
 $string['privacy:metadata'] = 'The Merge User Accounts plugin stores merge logs. Personal data in user snapshots is anonymized upon user deletion request while preserving audit records.';
 $string['privacy:metadata:tool_mergeusers'] = 'Merge logs containing information about user merge operations and user snapshots.';
