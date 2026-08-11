@@ -44,8 +44,11 @@ use Throwable;
  *
  * The user whose picture should prevail is decided by the general setting
  * `tool_mergeusers/uniquekeynewidtomaintain`, the same one used to resolve conflicting records on
- * compound indexes. If the prevailing user has no picture, the other user's picture is used as a
- * fallback. If neither has one, nothing happens.
+ * compound indexes. If the prevailing user has no trusted picture, the other user's picture is used
+ * as a fallback. If neither has one, nothing happens. A user's own picture is never trusted, on top
+ * of simply not having one, when either that user is currently suspended, or its picture still
+ * matches this plugin's own record of a placeholder it applied on an earlier, unrelated merge - see
+ * {@see picture_status()} for the full detail behind both checks.
  *
  * @package   tool_mergeusers
  * @author    Jordi Pujol Ahulló <jordi.pujol@urv.cat>
@@ -82,8 +85,13 @@ final class picture_merger {
         $winnerid = (bool) (int) get_config('tool_mergeusers', 'uniquekeynewidtomaintain') ? $toid : $fromid;
         $otherid = ($winnerid === $toid) ? $fromid : $toid;
 
-        $winnerhaspicture = self::has_real_picture($winnerid, $currentlogid);
-        $otherhaspicture = self::has_real_picture($otherid, $currentlogid);
+        $winnerstatus = self::picture_status($winnerid, $currentlogid);
+        $otherstatus = self::picture_status($otherid, $currentlogid);
+        self::log_if_suspended($winnerid, $winnerstatus, $actions);
+        self::log_if_suspended($otherid, $otherstatus, $actions);
+
+        $winnerhaspicture = $winnerstatus['trusted'];
+        $otherhaspicture = $otherstatus['trusted'];
 
         if (!$winnerhaspicture && !$otherhaspicture) {
             $actions[] = get_string('picturemergenopicture', 'tool_mergeusers', $a);
@@ -103,23 +111,59 @@ final class picture_merger {
     }
 
     /**
-     * Whether the given user has a profile picture that is not merely a leftover copy of this
-     * plugin's own "suspended" placeholder image from an earlier, unrelated merge.
+     * Whether the given user has a profile picture that can be trusted as their own, real picture -
+     * and if not, why not.
+     *
+     * A picture is NOT trusted, on top of the user simply having none at all (user.picture == 0), in
+     * two further cases, both meant to guard the same underlying concern - never letting this
+     * plugin's own "suspended" placeholder image reach an active account - from two different angles:
+     *
+     * 1. The user is currently suspended. In this plugin's own normal operation, a suspended user is
+     * (almost always) one this plugin has already processed as the removed side of an earlier merge,
+     * so its picture is not to be trusted, REGARDLESS of whether the exact recorded placeholder value
+     * below still matches (belt and braces: cheap, and correct even if, for some reason, that record
+     * is missing or stale).
+     * 2. Independently of the current suspended flag (which an administrator could have cleared since,
+     * deliberately or not), the picture still matches this plugin's own durable record of the exact
+     * value it set as the placeholder the last time this user was the removed side of a merge.
      *
      * @param int $userid
      * @param int|null $currentlogid see {@see merge_picture()}.
-     * @return bool
+     * @return array{trusted: bool, suspended: bool} "trusted" is false whenever the picture must not
+     * be used; "suspended" is true only when that specific reason applied (used only for logging).
      * @throws dml_exception
      */
-    private static function has_real_picture(int $userid, ?int $currentlogid): bool {
+    private static function picture_status(int $userid, ?int $currentlogid): array {
         global $DB;
 
         $picture = (int) $DB->get_field('user', 'picture', ['id' => $userid]);
         if ($picture === 0) {
-            return false;
+            return ['trusted' => false, 'suspended' => false];
         }
 
-        return !self::is_suspended_placeholder($userid, $picture, $currentlogid);
+        if ((bool) (int) $DB->get_field('user', 'suspended', ['id' => $userid])) {
+            return ['trusted' => false, 'suspended' => true];
+        }
+
+        $trusted = !self::is_suspended_placeholder($userid, $picture, $currentlogid);
+
+        return ['trusted' => $trusted, 'suspended' => false];
+    }
+
+    /**
+     * Appends a dedicated log line when $status marks $userid's picture as disregarded specifically
+     * because the user is suspended (as opposed to genuinely having none, or matching this plugin's
+     * own recorded placeholder value), so the merge's persisted log distinguishes this case too.
+     *
+     * @param int $userid
+     * @param array{trusted: bool, suspended: bool} $status
+     * @param array $actions list of log lines to append to, by reference.
+     * @return void
+     */
+    private static function log_if_suspended(int $userid, array $status, array &$actions): void {
+        if ($status['suspended']) {
+            $actions[] = get_string('picturemergeuserskippedsuspended', 'tool_mergeusers', (object) ['userid' => $userid]);
+        }
     }
 
     /**
