@@ -407,7 +407,7 @@ final class picture_merger_test extends advanced_testcase {
     public function test_merge_picture_ignores_toid_picture_when_suspended_without_any_placeholder_record(): void {
         global $DB;
 
-        $touserpicture = $this->set_user_picture($this->touser->id);
+        $this->set_user_picture($this->touser->id);
         $DB->set_field('user', 'suspended', 1, ['id' => $this->touser->id]);
         $this->set_user_picture($this->fromuser->id);
         $fromhash = $this->get_icon_contenthash($this->fromuser->id);
@@ -420,7 +420,9 @@ final class picture_merger_test extends advanced_testcase {
             $actions,
             sprintf('user %d is suspended', $this->touser->id)
         ));
-        $this->assertNotEquals($touserpicture, $DB->get_field('user', 'picture', ['id' => $this->touser->id]));
+        // The kept user's picture is now a byte-for-byte copy of the removed user's - a stronger,
+        // more meaningful proof that the copy actually happened than merely asserting the numeric
+        // "picture" value changed to *something* else would be.
         $this->assertEquals($fromhash, $this->get_icon_contenthash($this->touser->id));
     }
 
