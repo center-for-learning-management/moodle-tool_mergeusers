@@ -3,6 +3,33 @@
 If not specified, each change is performed in the version date.
 It means that if version is YYYYMMDDOO, the change was performed on YYYY-MM-DD.
 
+## 2026081301
+
+1. fix: #395: a merge could leave a `mod_choice` user with two answers for the
+   same choice when it does not allow multiple answers, or with an
+   unintentionally deduplicated answer when it does - `choice_answers` had no
+   real database index, but `mod_choice`'s own PHP code assumes one, and would
+   otherwise silently report an arbitrary one of the duplicate answers (plus a
+   `debugging()` notice) instead of the merged user's real answer when reading
+   their activity report. A new `choice_answers_table_merger` now resolves
+   conflicts using each choice's own `allowmultiple` setting: at most one
+   answer per user when it is off, one answer per user per option when it is
+   on. `generic_table_merger` gained an overridable `build_group_key()` method
+   to support this.
+2. fix: #395: `survey_answers` (Moodle 4.5's `mod_survey`, still supported by
+   this plugin) is now a compound index too: a merge where both users had
+   answered the same survey question would otherwise leave the merged user
+   with two answers to it, silently double-counting them in survey results
+   reports.
+3. `lesson_attempts` was also evaluated for #395, but intentionally left out
+   of this fix: no crash or real database constraint was found, only a
+   cosmetic duplicate "try" number in `lesson_report.php` when both merged
+   users had attempted the same lesson - fixing that losslessly would need a
+   dedicated renumbering table_merger, akin to `quiz_attempts_table_merger`,
+   which is a large enough change to warrant its own future issue.
+
+   Thanks to @charbusch for raising the issue.
+
 ## 2026081300
 
 1. fix: #429: the results page after a synchronous web merge (no ad-hoc task queued)
