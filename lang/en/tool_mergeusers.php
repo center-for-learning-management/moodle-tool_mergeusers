@@ -67,6 +67,13 @@ $string['header_help'] = '<p>Given a user to be deleted and a user to keep, this
 $string['invalid_option'] = 'Invalid form option';
 $string['invaliduser'] = 'Does not exist a user with field "{$a->field}" = "{$a->value}"';
 $string['lastmerge'] = 'Last merges involving this user:';
+$string['lessonattempt_action_delete_fromid'] = 'Keep attempts from the new user';
+$string['lessonattempt_action_delete_toid'] = 'Keep attempts from the old user';
+$string['lessonattempt_action_remain'] = 'Do nothing: do not merge nor delete';
+$string['lessonattempt_action_remain_log'] = 'Lesson {$a}: attempts are not merged nor deleted, they remain related to their own user.';
+$string['lessonattempt_action_renumber'] = 'Merge attempts from both users and renumber';
+$string['lessonattemptsaction'] = 'How to resolve lesson attempts';
+$string['lessonattemptsaction_desc'] = 'When merging lesson attempts (lesson_attempts, lesson_branch, lesson_grades, lesson_timer) there may exist three cases: <ol><li>Only the old user has attempts for a lesson. All attempts will appear as if they were made by the new user.</li><li>Only the new user has attempts for that lesson. All is correct and nothing is done.</li><li>Both users have attempts for the same lesson. <strong>You have to choose what to do in this case of conflict.</strong> You are required to choose one of the following actions: <ul> <li><strong>{$a->renumber}</strong>. Attempts from the old user are merged with the ones of the new user and renumbered by the time they were completed. In the rare case of two overlapping sessions, the "time taken" shown for a specific attempt in the detailed report may end up paired with a different attempt\'s timer - this never affects grades or answers, only that one report figure.</li><li><strong>{$a->delete_fromid}</strong>. Attempts from the old user are removed for that lesson. Attempts from the new user are kept, since this option considers them as the most important.</li><li><strong>{$a->delete_toid}</strong>. Attempts from the new user are removed for that lesson. Attempts from the old user are kept, since this option considers them as the most important.</li><li><strong>{$a->remain}</strong>. Attempts for that lesson are not merged nor deleted, remaining related to the user who made them. This is the most secure action, but merging users from user A to user B or B to A may produce different lesson grades.</li></ul> </li></ol>';
 $string['logidurl'] = '<a href="{$a->url}">log id {$a->id}</a>';
 $string['logko'] = 'Some error occurred:';
 $string['logline'] = 'For further reference, these results are recorded in the {$a}.';

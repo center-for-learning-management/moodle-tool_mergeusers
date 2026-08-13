@@ -181,6 +181,16 @@ if ($ADMIN->fulltree) {
         $quizoptions->options
     ));
 
+    // Lesson attempts.
+    $lessonoptions = tool_mergeusers_build_lesson_options();
+    $generalsettings->add(new admin_setting_configselect(
+        'tool_mergeusers/lessonattemptsaction',
+        get_string('lessonattemptsaction', 'tool_mergeusers'),
+        get_string('lessonattemptsaction_desc', 'tool_mergeusers', $lessonoptions->allstrings),
+        $lessonoptions->defaultkey,
+        $lessonoptions->options
+    ));
+
     $generalsettings->add(new admin_setting_configselect(
         'tool_mergeusers/maxsearchresults',
         get_string('maxsearchresults_setting', 'tool_mergeusers'),
