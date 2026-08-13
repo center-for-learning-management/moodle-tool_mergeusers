@@ -155,8 +155,8 @@ final class picture_merger {
      * because the user is suspended (as opposed to genuinely having none, or matching this plugin's
      * own recorded placeholder value), so the merge's persisted log distinguishes this case too.
      *
-     * @param int $userid
-     * @param array{trusted: bool, suspended: bool} $status
+     * @param int $userid id of the user whose picture is being evaluated.
+     * @param array $status shape: ['trusted' => bool, 'suspended' => bool], see self::picture_status().
      * @param array $actions list of log lines to append to, by reference.
      * @return void
      */
