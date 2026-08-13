@@ -192,6 +192,16 @@ class default_db_config {
                 'userfield' => ['userid'],
                 'otherfields' => ['attempt', 'quiz'],
             ],
+            'survey_answers' => [
+                // No real DB index (see mod/survey/db/install.xml; mod_survey was removed
+                // from Moodle core after 4.5, but this plugin still supports 4.5). PHP
+                // business logic assumes at most one answer per user per (survey,
+                // question); without this, a merge where both users answered the same
+                // question would leave the merged user with two answers, silently
+                // double-counting them in survey results reports.
+                'userfield' => ['userid'],
+                'otherfields' => ['survey', 'question'],
+            ],
             'tool_policy_acceptances' => [
                 // For index 'mdl_toolpoliacce_poluse_uix'.
                 // Type of index: unique; type of matching: by foreign key.
