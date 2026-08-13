@@ -66,10 +66,21 @@ class lesson_attempts_table_merger extends generic_table_merger {
 
     /**
      * Loads the configured action to apply on conflicting lessons.
+     *
+     * Falls back to ACTION_RENUMBER (the setting's own default) when the config value is
+     * unset (get_config() returns false before the setting is ever saved) or invalid.
      */
     public function __construct() {
         parent::__construct();
-        $this->action = get_config('tool_mergeusers', 'lessonattemptsaction');
+
+        $action = get_config('tool_mergeusers', 'lessonattemptsaction');
+        $validactions = [
+            self::ACTION_RENUMBER => true,
+            self::ACTION_DELETE_FROM_SOURCE => true,
+            self::ACTION_DELETE_FROM_TARGET => true,
+            self::ACTION_REMAIN => true,
+        ];
+        $this->action = isset($validactions[$action]) ? $action : self::ACTION_RENUMBER;
     }
 
     /**

@@ -166,6 +166,29 @@ final class lesson_attempts_table_merger_test extends \advanced_testcase {
     }
 
     /**
+     * With no lessonattemptsaction ever saved, get_config() returns false; the merger must
+     * still work, falling back to RENUMBER rather than crashing on the typed property.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_lesson_attempts
+     * @covers \tool_mergeusers\local\merger\lesson_attempts_table_merger::__construct
+     */
+    public function test_falls_back_to_renumber_when_config_unset(): void {
+        global $DB;
+
+        unset_config('lessonattemptsaction', 'tool_mergeusers');
+        $this->create_attempt($this->lesson->id, $this->userremove->id, 0, 80, 1000);
+        $this->create_attempt($this->lesson->id, $this->userkeep->id, 0, 90, 2000);
+
+        $this->merge();
+
+        $attempts = array_values(
+            $DB->get_records('lesson_attempts', ['lessonid' => $this->lesson->id, 'userid' => $this->userkeep->id], 'retry')
+        );
+        $this->assertEquals([0, 1], array_map(fn($a) => (int) $a->retry, $attempts));
+    }
+
+    /**
      * Demonstrates why lesson_attempts_table_merger is needed: with plain
      * generic_table_merger, both users' retry=0 rows collide under the same retry value.
      *
