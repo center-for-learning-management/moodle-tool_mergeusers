@@ -55,6 +55,18 @@ use stdClass;
  */
 class choice_answers_table_merger extends generic_table_merger {
     /**
+     * Return empty array. It has no other tables rather than 'choice_answers' to process.
+     *
+     * The JOIN with {choice} added by self::build_sql_query() is read-only lookup data,
+     * not a table this merger updates, so there is nothing else to skip here.
+     *
+     * @return array Empty list.
+     */
+    public function get_tables_to_skip(): array {
+        return [];
+    }
+
+    /**
      * Generates an SQL query that also fetches the owning choice's 'allowmultiple' value,
      * needed by self::build_group_key() to decide the real uniqueness key per record.
      *
