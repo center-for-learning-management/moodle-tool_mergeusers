@@ -3,6 +3,15 @@
 If not specified, each change is performed in the version date.
 It means that if version is YYYYMMDDOO, the change was performed on YYYY-MM-DD.
 
+## 2026081302
+
+1. feature: #395: `lesson_attempts`/`lesson_branch`/`lesson_grades`/`lesson_timer` are now
+   handled by a new `lesson_attempts_table_merger`, with a `lessonattemptsaction` setting
+   (renumber/delete-from-old/delete-from-new/remain) mirroring `quizattemptsaction`.
+   Renumbering orders retries by `lesson_grades.completed`; grading is unaffected by
+   `lesson_timer`'s own ordering, which can only make one report's "time taken" figure
+   imprecise in the rare case of two overlapping sessions.
+
 ## 2026081301
 
 1. fix: #395: a merge could leave a `mod_choice` user with two answers for the

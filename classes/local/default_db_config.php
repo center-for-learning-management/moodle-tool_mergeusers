@@ -29,6 +29,7 @@ use tool_mergeusers\local\cli\cli_gathering;
 use tool_mergeusers\local\merger\assign_submission_table_merger;
 use tool_mergeusers\local\merger\choice_answers_table_merger;
 use tool_mergeusers\local\merger\generic_table_merger;
+use tool_mergeusers\local\merger\lesson_attempts_table_merger;
 use tool_mergeusers\local\merger\quiz_attempts_table_merger;
 use tool_mergeusers\local\merger\grade_grades_table_merger;
 
@@ -465,6 +466,8 @@ class default_db_config {
         'tablemergers' => [
             'default' => generic_table_merger::class,
             'choice_answers' => choice_answers_table_merger::class,
+            // Also handles lesson_branch/lesson_grades/lesson_timer directly, per lessonattemptsaction.
+            'lesson_attempts' => lesson_attempts_table_merger::class,
             'quiz_attempts' => quiz_attempts_table_merger::class,
             'assign_submission' => assign_submission_table_merger::class,
             'grade_grades' => grade_grades_table_merger::class,

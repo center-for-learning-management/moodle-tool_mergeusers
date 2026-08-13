@@ -24,6 +24,7 @@
  */
 
 use tool_mergeusers\local\config;
+use tool_mergeusers\local\merger\lesson_attempts_table_merger;
 use tool_mergeusers\local\merger\quiz_attempts_table_merger;
 use tool_mergeusers\local\profile_fields;
 use tool_mergeusers\task\merge_users_task;
@@ -76,6 +77,34 @@ function tool_mergeusers_build_quiz_options(): stdClass {
     $result->allstrings = $optionsstrings;
     $result->defaultkey = quiz_attempts_table_merger::ACTION_RENUMBER;
     $result->options = $quizoptions;
+
+    return $result;
+}
+
+/**
+ * Builds the lesson attempts options for the plugin settings.
+ *
+ * @return stdClass instance with the options and defaultkey to be used.
+ * @throws coding_exception
+ */
+function tool_mergeusers_build_lesson_options(): stdClass {
+    $options = [
+        lesson_attempts_table_merger::ACTION_RENUMBER,
+        lesson_attempts_table_merger::ACTION_DELETE_FROM_SOURCE,
+        lesson_attempts_table_merger::ACTION_DELETE_FROM_TARGET,
+        lesson_attempts_table_merger::ACTION_REMAIN,
+    ];
+    $optionsstrings = new stdClass();
+    $lessonoptions = [];
+    foreach ($options as $optionname) {
+        $optionsstrings->{$optionname} = get_string('lessonattempt_action_' . $optionname, 'tool_mergeusers');
+        $lessonoptions[$optionname] = $optionsstrings->{$optionname};
+    }
+
+    $result = new stdClass();
+    $result->allstrings = $optionsstrings;
+    $result->defaultkey = lesson_attempts_table_merger::ACTION_RENUMBER;
+    $result->options = $lessonoptions;
 
     return $result;
 }
