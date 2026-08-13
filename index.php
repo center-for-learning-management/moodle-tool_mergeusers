@@ -29,6 +29,7 @@
  */
 
 use core\task\manager;
+use tool_mergeusers\local\logger;
 use tool_mergeusers\local\profile_fields;
 use tool_mergeusers\local\selected_users_to_merge;
 use tool_mergeusers\local\user_merger;
@@ -174,8 +175,21 @@ if (!empty($option)) {
             // Reset mut session to let the user choose another pair of users to merge.
             $currentuserselection->clear_users_selection();
 
-            // Render results page.
-            echo $renderer->results_page($touser, $fromuser, $success ? 'success' : 'error', $log, $logid);
+            // Render results page from the persisted log and live (post-merge) user
+            // data, exactly like log.php?id=$logid does, instead of the stale
+            // pre-merge objects and the bare actions list.
+            $storedlog = (new logger())->detail_from($logid);
+            $to = logger::live_user_or_deleted_placeholder($storedlog->touserid);
+            $from = logger::live_user_or_deleted_placeholder($storedlog->fromuserid);
+            echo $renderer->results_page(
+                $to,
+                $from,
+                $storedlog->status,
+                $storedlog->log,
+                $storedlog->id,
+                $storedlog->timecreated,
+                $storedlog->timemodified,
+            );
             break;
 
         // We have both users to merge selected, but we want to change any of them.

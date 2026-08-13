@@ -467,6 +467,26 @@ final class logger {
     }
 
     /**
+     * Gets the live {user} record for $userid, or a synthetic "deleted" placeholder
+     * (id/username/deleted only) when it no longer exists in the database.
+     *
+     * @param int $userid
+     * @return stdClass
+     */
+    public static function live_user_or_deleted_placeholder(int $userid): stdClass {
+        global $DB;
+        $user = $DB->get_record('user', ['id' => $userid]);
+        if ($user) {
+            return $user;
+        }
+        $placeholder = new stdClass();
+        $placeholder->id = $userid;
+        $placeholder->username = get_string('deleted');
+        $placeholder->deleted = 1;
+        return $placeholder;
+    }
+
+    /**
      * Captures normalized snapshots for both users involved in a merge, sharing a
      * single capture timestamp (when this pair was captured, not when the merge
      * itself happened - useful during db/upgrade.php normalization, where the
