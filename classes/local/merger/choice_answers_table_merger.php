@@ -70,6 +70,11 @@ class choice_answers_table_merger extends generic_table_merger {
      * Generates an SQL query that also fetches the owning choice's 'allowmultiple' value,
      * needed by self::build_group_key() to decide the real uniqueness key per record.
      *
+     * Uses a LEFT JOIN, not an INNER JOIN: Moodle does not enforce this foreign key at the
+     * database level, so a choice_answers row could in principle point to a choice that no
+     * longer exists. An INNER JOIN would silently exclude such orphaned rows from conflict
+     * detection entirely, defeating the purpose of this merger for them.
+     *
      * @param array $data Array containing the table name, `fromid`, and `toid` for the merging operation.
      * @param string $userfield The field name in the table that refers to the user ID.
      * @param string $otherfieldsstr A string representing the other fields in the compound index, separated by commas.
@@ -78,7 +83,7 @@ class choice_answers_table_merger extends generic_table_merger {
     protected function build_sql_query(array $data, string $userfield, string $otherfieldsstr): array {
         $sql = 'SELECT ca.id, ca.' . $userfield . ', ' . $otherfieldsstr . ', c.allowmultiple' .
             ' FROM {' . $data['tableName'] . '} ca' .
-            ' JOIN {choice} c ON c.id = ca.choiceid' .
+            ' LEFT JOIN {choice} c ON c.id = ca.choiceid' .
             ' WHERE ca.' . $userfield . ' IN ( ?, ?)';
 
         return [$sql, [$data['fromid'], $data['toid']]];
@@ -88,12 +93,16 @@ class choice_answers_table_merger extends generic_table_merger {
      * Builds the grouping key for a choice_answers record: choiceid alone when the owning
      * choice does not allow multiple answers per user, or (choiceid, optionid) when it does.
      *
+     * A missing (null) 'allowmultiple' - an orphaned row whose choice no longer exists, per
+     * the LEFT JOIN in self::build_sql_query() - is treated the same as 0 (single-select),
+     * the stricter and safer interpretation.
+     *
      * @param stdClass $resobj the record being grouped, including the joined 'allowmultiple' column.
      * @param array $otherfields table's field names that refer to the other members of the compound index.
      * @return string the grouping key for this record.
      */
     protected function build_group_key(stdClass $resobj, array $otherfields): string {
-        if ((int) $resobj->allowmultiple) {
+        if ((int) ($resobj->allowmultiple ?? 0)) {
             return parent::build_group_key($resobj, $otherfields);
         }
 

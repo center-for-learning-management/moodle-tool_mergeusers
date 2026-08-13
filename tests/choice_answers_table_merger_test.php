@@ -121,7 +121,10 @@ final class choice_answers_table_merger_test extends \advanced_testcase {
         $cm = get_coursemodule_from_id('choice', $choice->cmid);
         $outline = choice_user_outline($this->course, $this->userkeep, $cm, $choice);
         $this->assertNotNull($outline);
-        $this->assertDebuggingCalled('Error: mdb->get_record() found more than one record!');
+        // Not asserting the exact debugging() message text: it is not guaranteed to stay
+        // stable across Moodle versions or DB drivers, and the row count assertion above
+        // already verifies the actual inconsistency this test is about.
+        $this->assertDebuggingCalled();
     }
 
     /**
