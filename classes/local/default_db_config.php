@@ -27,6 +27,7 @@ namespace tool_mergeusers\local;
 
 use tool_mergeusers\local\cli\cli_gathering;
 use tool_mergeusers\local\merger\assign_submission_table_merger;
+use tool_mergeusers\local\merger\choice_answers_table_merger;
 use tool_mergeusers\local\merger\generic_table_merger;
 use tool_mergeusers\local\merger\quiz_attempts_table_merger;
 use tool_mergeusers\local\merger\grade_grades_table_merger;
@@ -100,6 +101,19 @@ class default_db_config {
                 // Type of index: unique; type of matching: by foreign key.
                 'userfield' => ['userid'],
                 'otherfields' => ['cmid', 'courseid'],
+            ],
+            'choice_answers' => [
+                // No real DB index (see mod/choice/db/install.xml); PHP business logic
+                // assumes uniqueness per (choiceid, optionid) when the choice allows
+                // multiple answers, or per choiceid alone otherwise -
+                // mod/choice/lib.php's choice_user_outline() reads it with a singular
+                // get_record(), which - with more than one matching row - silently
+                // returns an arbitrary one of the answers instead of the merged user's
+                // real one (plus a debugging() notice).
+                // Handled by choice_answers_table_merger, which decides the actual
+                // grouping key per record from the choice's own 'allowmultiple' setting.
+                'userfield' => ['userid'],
+                'otherfields' => ['choiceid', 'optionid'],
             ],
             'cohort_members' => [
                 // For index 'cohortid-userid'.
@@ -440,6 +454,7 @@ class default_db_config {
         // The 'default' is applied when no specific table_merger is specified.
         'tablemergers' => [
             'default' => generic_table_merger::class,
+            'choice_answers' => choice_answers_table_merger::class,
             'quiz_attempts' => quiz_attempts_table_merger::class,
             'assign_submission' => assign_submission_table_merger::class,
             'grade_grades' => grade_grades_table_merger::class,
