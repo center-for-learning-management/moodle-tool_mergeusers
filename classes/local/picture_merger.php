@@ -155,6 +155,11 @@ final class picture_merger {
      * because the user is suspended (as opposed to genuinely having none, or matching this plugin's
      * own recorded placeholder value), so the merge's persisted log distinguishes this case too.
      *
+     * Deliberately not using an array{...} shape annotation for $status below (unlike
+     * self::picture_status()'s return type): on a parameter tag, moodle-plugin-ci's phpdoc
+     * checker misreports it as an incomplete parameter list and fails CI - verified by
+     * reproducing it locally with that exact syntax.
+     *
      * @param int $userid id of the user whose picture is being evaluated.
      * @param array $status shape: ['trusted' => bool, 'suspended' => bool], see self::picture_status().
      * @param array $actions list of log lines to append to, by reference.

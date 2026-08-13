@@ -55,7 +55,7 @@ use stdClass;
  */
 class choice_answers_table_merger extends generic_table_merger {
     /**
-     * Return empty array. It has no other tables rather than 'choice_answers' to process.
+     * Return empty array. It has no other tables other than 'choice_answers' to process.
      *
      * The JOIN with {choice} added by self::build_sql_query() is read-only lookup data,
      * not a table this merger updates, so there is nothing else to skip here.
