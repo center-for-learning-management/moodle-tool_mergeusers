@@ -148,5 +148,7 @@ final class survey_answers_compound_index_test extends \advanced_testcase {
 
         $answers = $DB->get_records('survey_answers', ['survey' => $surveyid, 'userid' => $userkeep->id]);
         $this->assertCount(2, $answers);
+
+        $this->assertCount(0, $DB->get_records('survey_answers', ['survey' => $surveyid, 'userid' => $userremove->id]));
     }
 }

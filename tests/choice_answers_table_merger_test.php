@@ -140,5 +140,10 @@ final class choice_answers_table_merger_test extends \advanced_testcase {
         $expected = [(int) $options[0]->id, (int) $options[1]->id];
         sort($expected);
         $this->assertEquals($expected, $optionids);
+
+        $this->assertCount(
+            0,
+            $DB->get_records('choice_answers', ['choiceid' => $choice->id, 'userid' => $this->userremove->id])
+        );
     }
 }
