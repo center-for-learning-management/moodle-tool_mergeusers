@@ -28,6 +28,7 @@ namespace tool_mergeusers\local\merger;
 use coding_exception;
 use dml_exception;
 use Exception;
+use stdClass;
 
 /**
  * Generic implementation of a table_merger.
@@ -143,11 +144,7 @@ class generic_table_merger implements table_merger {
         $itemarr = [];
         $idstoremove = [];
         foreach ($result as $id => $resobj) {
-            $keyfromother = [];
-            foreach ($otherfields as $of) {
-                $keyfromother[] = $resobj->$of;
-            }
-            $keyfromotherstr = implode('-', $keyfromother);
+            $keyfromotherstr = $this->build_group_key($resobj, $otherfields);
             $itemarr[$keyfromotherstr][$resobj->$userfield] = $id;
         }
 
@@ -166,6 +163,27 @@ class generic_table_merger implements table_merger {
 
         unset($idstoremove);
         unset($sql);
+    }
+
+    /**
+     * Builds the grouping key used to detect compound-index conflicts for a given record.
+     *
+     * The default implementation simply concatenates the values of $otherfields, so that
+     * records sharing the same combination of those column values are grouped together.
+     * This method can be overridden by subclasses whose real uniqueness constraint depends
+     * on data outside the fixed $otherfields list (e.g. a flag on a related table that
+     * changes which columns actually make a record unique for a given user).
+     *
+     * @param stdClass $resobj the record being grouped, as returned by self::build_sql_query().
+     * @param array $otherfields table's field names that refer to the other members of the compound index.
+     * @return string the grouping key for this record.
+     */
+    protected function build_group_key(stdClass $resobj, array $otherfields): string {
+        $keyfromother = [];
+        foreach ($otherfields as $of) {
+            $keyfromother[] = $resobj->$of;
+        }
+        return implode('-', $keyfromother);
     }
 
     /**
