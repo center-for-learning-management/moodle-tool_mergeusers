@@ -142,18 +142,31 @@ final class choice_answers_table_merger_test extends \advanced_testcase {
         ]);
         $options = array_values($DB->get_records('choice_options', ['choiceid' => $choice->id], 'id'));
 
-        $generator->create_response([
-            'choiceid' => $choice->id,
-            'responses' => $options[0]->id,
-            'userid' => $this->userremove->id,
-        ]);
-        $generator->create_response([
-            'choiceid' => $choice->id,
-            'responses' => $options[1]->id,
-            'userid' => $this->userkeep->id,
-        ]);
+        $this->submit_choice_response($choice, $options[0]->id, $this->userremove->id);
+        $this->submit_choice_response($choice, $options[1]->id, $this->userkeep->id);
 
         return $choice;
+    }
+
+    /**
+     * Submits a choice response for the given user.
+     *
+     * mod_choice's own test generator only gained a create_response() method in Moodle 5.1
+     * (MDL-83179); this plugin still supports 4.5+, so this calls the underlying core
+     * function directly instead - the exact same call create_response() makes internally,
+     * and stable across every supported version.
+     *
+     * @param \stdClass $choice the choice instance, as returned by the generator's create_instance().
+     * @param int|array $responses a single optionid, or an array of optionids for allowmultiple choices.
+     * @param int $userid the user submitting the response.
+     * @return void
+     */
+    private function submit_choice_response(\stdClass $choice, int|array $responses, int $userid): void {
+        global $DB;
+
+        [$course, $cm] = get_course_and_cm_from_instance($choice->id, 'choice');
+        $choicerecord = $DB->get_record('choice', ['id' => $choice->id], '*', MUST_EXIST);
+        choice_user_submit_response($responses, $choicerecord, $userid, $course, $cm);
     }
 
     /**
@@ -178,17 +191,9 @@ final class choice_answers_table_merger_test extends \advanced_testcase {
         $options = array_values($DB->get_records('choice_options', ['choiceid' => $choice->id], 'id'));
 
         // The user to remove has two legitimate selections of their own.
-        $generator->create_response([
-            'choiceid' => $choice->id,
-            'responses' => [$options[0]->id, $options[1]->id],
-            'userid' => $this->userremove->id,
-        ]);
+        $this->submit_choice_response($choice, [$options[0]->id, $options[1]->id], $this->userremove->id);
         // The user to keep selected the same first option as the user to remove: a real conflict.
-        $generator->create_response([
-            'choiceid' => $choice->id,
-            'responses' => $options[0]->id,
-            'userid' => $this->userkeep->id,
-        ]);
+        $this->submit_choice_response($choice, $options[0]->id, $this->userkeep->id);
 
         $mut = new user_merger();
         $mut->merge($this->userkeep->id, $this->userremove->id);
