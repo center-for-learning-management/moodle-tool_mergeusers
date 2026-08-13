@@ -214,6 +214,12 @@ than extend the gap.
 ## Git and release conventions
 
 - Repository: `github.com/jpahullo/moodle-tool_mergeusers`.
+- **No `gh` CLI available in this environment.** Do not try it (it will
+  fail with "command not found") - go straight to `curl`/`WebFetch` against
+  the public GitHub REST API instead, e.g.
+  `https://api.github.com/repos/jpahullo/moodle-tool_mergeusers/pulls/<n>/comments`
+  for PR review comments, or `.../issues/<n>` for issue details. No token
+  is needed for read access to this public repo.
 - Commit messages follow `#<github-issue-number> - <short description>`,
   every change tied to a GitHub issue. **The first line must start with a
   leading space before the `#`** (` #393 - ...`, not `#393 - ...`): git's
