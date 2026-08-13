@@ -3,6 +3,16 @@
 If not specified, each change is performed in the version date.
 It means that if version is YYYYMMDDOO, the change was performed on YYYY-MM-DD.
 
+## 2026081300
+
+1. fix: #429: the results page after a synchronous web merge (no ad-hoc task queued)
+   showed only the user id and nothing else, unlike the same merge viewed through
+   `log.php?id=XXX`, which showed the full consolidated identity table. `index.php`
+   was rendering the results page with the pre-merge user objects and the raw
+   actions list instead of the persisted log (with its `user_snapshots`) and the
+   live post-merge user records that `log.php` already used; both views now render
+   identically.
+
 ## 2026081002
 
 1. feature: #377: the profile picture of the two merged users is now merged

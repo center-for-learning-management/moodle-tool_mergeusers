@@ -300,4 +300,37 @@ final class logger_test extends advanced_testcase {
         $legacystored = $mut->detail_from($legacylogid);
         $this->assertNull($legacystored->log->user_snapshots->from_user->username);
     }
+
+    /**
+     * Test that live_user_or_deleted_placeholder() returns the real {user} record
+     * when it still exists.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_logger
+     */
+    public function test_live_user_or_deleted_placeholder_returns_live_user_when_it_exists(): void {
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = logger::live_user_or_deleted_placeholder($user->id);
+
+        $this->assertSame((int) $user->id, (int) $result->id);
+        $this->assertSame($user->username, $result->username);
+        $this->assertObjectHasProperty('email', $result);
+    }
+
+    /**
+     * Test that live_user_or_deleted_placeholder() returns a synthetic "deleted"
+     * placeholder, carrying only id/username/deleted, when the id does not match
+     * any {user} record.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_logger
+     */
+    public function test_live_user_or_deleted_placeholder_returns_placeholder_when_missing(): void {
+        $result = logger::live_user_or_deleted_placeholder(999999);
+
+        $this->assertSame(999999, $result->id);
+        $this->assertSame(get_string('deleted'), $result->username);
+        $this->assertSame(1, $result->deleted);
+    }
 }
