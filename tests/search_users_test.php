@@ -29,16 +29,18 @@ use coding_exception;
 use dml_exception;
 use tool_mergeusers\local\user_searcher;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Tests for searching for users.
+ * @covers \tool_mergeusers\local\user_searcher
  */
 final class search_users_test extends advanced_testcase {
     /**
      * Test for searching for specific user fields.
      * Also, search must not return any matching deleted users.
      *
+     * @param string $searchfield The field to search in.
+     * @param string $input The search input value.
+     * @param int $count The expected number of results.
      * @group tool_mergeusers
      * @group tool_mergeusers_search_users
      * @dataProvider search_criteria
@@ -154,5 +156,203 @@ final class search_users_test extends advanced_testcase {
                 'count' => 1,
             ],
         ];
+    }
+
+    /**
+     * Test that count_users() reports the same number of matches search_users()
+     * would return unbounded, regardless of any limit later applied to search_users().
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_count_users_matches_unbounded_search_users_count(): void {
+        $this->resetAfterTest(true);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->getDataGenerator()->create_user(['firstname' => 'Findme', 'lastname' => "Number$i"]);
+        }
+
+        $mus = new user_searcher();
+
+        $this->assertSame(5, $mus->count_users('Findme', 'firstname'));
+        $this->assertCount(5, $mus->search_users('Findme', 'firstname'));
+    }
+
+    /**
+     * Test that search_users()'s $limitnum caps the number of returned rows, while
+     * count_users() still reports the true, uncapped total - the combination that
+     * lets the "too many results" warning show an accurate count alongside a
+     * deliberately truncated table.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_limitnum_caps_results_but_count_users_does_not(): void {
+        $this->resetAfterTest(true);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->getDataGenerator()->create_user(['firstname' => 'Findme', 'lastname' => "Number$i"]);
+        }
+
+        $mus = new user_searcher();
+
+        $this->assertCount(2, $mus->search_users('Findme', 'firstname', 2));
+        $this->assertSame(5, $mus->count_users('Findme', 'firstname'));
+    }
+
+    /**
+     * Test that search_users() with $limitnum = 0 (the default) still returns every
+     * matching row, i.e. the new parameter does not change existing behaviour when
+     * left at its default.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_default_limitnum_returns_everything(): void {
+        $this->resetAfterTest(true);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->getDataGenerator()->create_user(['firstname' => 'Findme', 'lastname' => "Number$i"]);
+        }
+
+        $mus = new user_searcher();
+
+        $this->assertCount(5, $mus->search_users('Findme', 'firstname'));
+        $this->assertCount(5, $mus->search_users('Findme', 'firstname', 0));
+    }
+
+    /**
+     * Test that a numeric $searchfield not listed in the searchbyprofilefields
+     * setting is rejected and falls back to the "search all fields" behaviour,
+     * instead of exposing an arbitrary profile field's data.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_ignores_non_allowlisted_profile_field_id(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $fieldid = $this->getDataGenerator()->create_custom_profile_field([
+            'shortname' => 'frogname', 'name' => 'Name of frog',
+            'datatype' => 'text',
+        ])->id;
+        // Deliberately not added to tool_mergeusers/searchbyprofilefields.
+
+        $user = $this->getDataGenerator()->create_user();
+        $uid = new \stdClass();
+        $uid->userid = $user->id;
+        $uid->fieldid = $fieldid;
+        $uid->data = 'frogvalueone';
+        $DB->insert_record('user_info_data', $uid);
+
+        $mus = new user_searcher();
+
+        $this->assertCount(0, $mus->search_users('frogvalueone', (string) $fieldid));
+    }
+
+    /**
+     * Test that the "search all fields" branch also matches allow-listed profile
+     * field data, not just the built-in user columns.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_all_fields_also_matches_allowlisted_profile_field(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $fieldid = $this->getDataGenerator()->create_custom_profile_field([
+            'shortname' => 'frogname', 'name' => 'Name of frog',
+            'datatype' => 'text',
+        ])->id;
+        set_config('searchbyprofilefieldsenabled', 1, 'tool_mergeusers');
+        set_config('searchbyprofilefields', (string) $fieldid, 'tool_mergeusers');
+
+        $user = $this->getDataGenerator()->create_user(['firstname' => 'Nomatch', 'lastname' => 'Nomatch']);
+        $uid = new \stdClass();
+        $uid->userid = $user->id;
+        $uid->fieldid = $fieldid;
+        $uid->data = 'uniquefrogvalue';
+        $DB->insert_record('user_info_data', $uid);
+
+        $mus = new user_searcher();
+
+        $this->assertCount(1, $mus->search_users('uniquefrogvalue', 'all'));
+        $this->assertSame(1, $mus->count_users('uniquefrogvalue', 'all'));
+    }
+
+    /**
+     * Regression test: once an allow-listed profile field extends the "search all
+     * fields" WHERE clause with an extra OR term, a deleted user matching one of
+     * the built-in fields (username/name/email/idnumber/id) must still be excluded.
+     * SQL's AND binds tighter than OR, so appending "AND deleted = 0" without
+     * parenthesising the whole OR expression would only constrain the last term.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_all_fields_excludes_deleted_users_when_profile_field_allowed(): void {
+        $this->resetAfterTest(true);
+
+        $fieldid = $this->getDataGenerator()->create_custom_profile_field([
+            'shortname' => 'frogname', 'name' => 'Name of frog',
+            'datatype' => 'text',
+        ])->id;
+        set_config('searchbyprofilefieldsenabled', 1, 'tool_mergeusers');
+        set_config('searchbyprofilefields', (string) $fieldid, 'tool_mergeusers');
+
+        $deleteduser = $this->getDataGenerator()->create_user(['username' => 'deletedmatch']);
+        delete_user($deleteduser);
+
+        $mus = new user_searcher();
+
+        $this->assertCount(0, $mus->search_users('deletedmatch', 'all'));
+        $this->assertSame(0, $mus->count_users('deletedmatch', 'all'));
+    }
+
+    /**
+     * Test that when more than one custom user profile field is allow-listed for
+     * searching, the "search all fields" branch finds a match in either of them,
+     * not just the first configured field id.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_search_users
+     */
+    public function test_search_users_all_fields_matches_any_of_several_allowlisted_profile_fields(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $frogfieldid = $this->getDataGenerator()->create_custom_profile_field([
+            'shortname' => 'frogname', 'name' => 'Name of frog',
+            'datatype' => 'text',
+        ])->id;
+        $toadfieldid = $this->getDataGenerator()->create_custom_profile_field([
+            'shortname' => 'toadname', 'name' => 'Name of toad',
+            'datatype' => 'text',
+        ])->id;
+        set_config('searchbyprofilefieldsenabled', 1, 'tool_mergeusers');
+        set_config('searchbyprofilefields', $frogfieldid . ',' . $toadfieldid, 'tool_mergeusers');
+
+        $froguser = $this->getDataGenerator()->create_user(['firstname' => 'Nomatch', 'lastname' => 'Nomatch']);
+        $froguid = new \stdClass();
+        $froguid->userid = $froguser->id;
+        $froguid->fieldid = $frogfieldid;
+        $froguid->data = 'uniquefrogvalue';
+        $DB->insert_record('user_info_data', $froguid);
+
+        $toaduser = $this->getDataGenerator()->create_user(['firstname' => 'Nomatch', 'lastname' => 'Nomatch']);
+        $toaduid = new \stdClass();
+        $toaduid->userid = $toaduser->id;
+        $toaduid->fieldid = $toadfieldid;
+        $toaduid->data = 'uniquetoadvalue';
+        $DB->insert_record('user_info_data', $toaduid);
+
+        $mus = new user_searcher();
+
+        $this->assertCount(1, $mus->search_users('uniquefrogvalue', 'all'));
+        $this->assertCount(1, $mus->search_users('uniquetoadvalue', 'all'));
+        $this->assertSame(1, $mus->count_users('uniquefrogvalue', 'all'));
+        $this->assertSame(1, $mus->count_users('uniquetoadvalue', 'all'));
     }
 }

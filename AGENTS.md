@@ -1,0 +1,293 @@
+# AGENTS.md — tool_mergeusers
+
+Guidance for any AI coding agent working on this plugin.
+
+## What this plugin does
+
+Merges two Moodle user accounts: all activity and records from user A (user
+to remove) are reassigned to user B (user to keep), so that B appears to
+have done everything both users ever did. Useful in institutions where a
+person's user identifier can change over time, leaving duplicate accounts
+for the same real person.
+
+Full behavioural documentation lives in `README.md`; version history and
+per-release notes live in `CHANGES.md`. Supported Moodle versions and the
+current plugin version are declared in `version.php`.
+
+## Critical invariants — never break these
+
+- **All-or-nothing commit.** `classes/local/user_merger.php::merge_users()`
+  opens a single delegated transaction, processes every table, then runs the
+  `after_merged_all_tables` hook. It commits **only if no errors were
+  recorded** during any of that; otherwise it rolls back the entire
+  transaction. Never introduce a code path that commits per-table or leaves
+  a merge partially applied.
+- **Always log and always fire an event.** Every merge attempt, successful
+  or failed, must call `classes/local/logger.php::log()` and dispatch a
+  `user_merged_success` or `user_merged_failure` event. Do not add a code
+  path that skips either.
+- **Respect the transaction-support gate.** `database_transactions.php` and
+  the `tool_mergeusers/transactions_only` setting stop a merge from running
+  on a database engine without transaction support, because a failed merge
+  there cannot be rolled back. Do not remove or bypass this check.
+- **Keep the human confirmation step.** The web UI only triggers a merge
+  after an explicit review screen and JS confirmation dialog
+  (`classes/output/review_user_form.php`, `index.php`). A merge is
+  irreversible — never add a path that performs it without that explicit
+  confirmation.
+- **Prefer the extension points below over editing core merge logic.**
+  Special-casing a table directly inside `user_merger.php` or the generic
+  merger is an anti-pattern; there is almost always a better place for it
+  (see next section).
+
+## Architecture at a glance
+
+- **Orchestrator**: `classes/local/user_merger.php`. Flow:
+   1. init (scan every DB table for user-related columns, load config),
+   2. per-table merge,
+   3. the `after_merged_all_tables` hook,
+   4. commit or rollback.
+- **Table mergers** (`classes/local/merger/`): Strategy + Template Method.
+   1. `table_merger` is the interface;
+   2. `generic_table_merger` is the default implementation with
+      protected methods meant to be overridden
+      (`build_sql_query`, `process_duplicated_records_for_compound_index`,
+      `update_all_records`, ...).
+   3. Special cases subclass it:
+      1. `grade_grades_table_merger`,
+      2. `quiz_attempts_table_merger`,
+      3. `assign_submission_table_merger`.
+- **Configuration**, three layers merged in priority order (highest wins):
+   1. `tool_mergeusers/customdbsettings` admin JSON setting.
+   2. Callbacks registered for the `add_settings_before_merging` hook.
+   3. `classes/local/default_db_config.php` — the plugin's built-in table
+      registry (compound indexes, user-field column names, table-merger
+      assignments, excluded tables).
+- **CLI**: `cli/climerger.php` drives `classes/local/cli/gathering_merger.php`,
+  which calls the same `user_merger` used by the web UI for every
+  `(fromid, toid)` pair produced by a `gathering` (an `Iterator`). The
+  default gathering prompts interactively; a custom `gathering`
+  implementation can source pairs from anywhere for bulk/scheduled merging.
+- **Logging/auditing**: a dedicated `tool_mergeusers` table (not Moodle's
+  standard log store), managed by `classes/local/logger.php` and
+  `classes/local/last_merge.php`; reviewable via `view.php` and `log.php`.
+- No `amd/` or `templates/` directories — the UI uses classic
+  `moodleform`/`html_writer`/renderer code, not Mustache/AMD.
+
+## Preferred extension points
+
+To support a new table or plugin without touching core merge logic:
+
+1. Add an entry to `classes/local/default_db_config.php`
+   (`compoundindexes` / `userfieldnames` / `tablemergers`) — submit this
+   upstream if it's a general case.
+2. Or register a callback for the `add_settings_before_merging` hook
+   (site- or plugin-specific configuration) or the `after_merged_all_tables`
+   hook (cross-table post-processing, e.g. regrading, completion
+   recalculation).
+3. For a genuinely new conflict-resolution case, subclass
+   `generic_table_merger` and override only the specific protected method
+   you need, then register the subclass in the `tablemergers` config.
+4. Use `cli/listuserfields.php` (read-only) to detect tables or compound
+   indexes missing from `default_db_config.php` locally in your Moodle instance. The list of plugins is specific on
+   any Moodle instance: this will help you identify details
+   not covered by the default configuration of this plugin.
+   You can, then, register your custom settings in the `add_settings_before_merging` hook or update the
+   administration settings from the UI.
+5. A custom `gathering` implementation (see `classes/local/cli/gathering.php`,
+   an empty marker interface over `\Iterator`) can optionally expose
+   `fromsearchedfield`/`fromsearchedvalue` and/or `tosearchedfield`/
+   `tosearchedvalue` string properties on a produced action, for the side(s)
+   where it could not resolve a real user id (`toid`/`fromid` <= 0).
+   `gathering_merger::merge()` reads these via `property_exists()` — a
+   `gathering` that predates this or simply doesn't set them behaves exactly
+   as before. `field` must be one of `username`, `idnumber`, `email` (the
+   same fields the web UI itself searches by, minus `id` — a not-found
+   search by `id` is already represented by the existing id +
+   `recoverable=false` snapshot shape); any other field name is silently
+   ignored. The results/log detail page then shows that one field instead of
+   the generic "not found" message with no context.
+
+## Coding standards
+
+- Moodle coding style takes precedence over PSR-12 where they conflict.
+- 4-space indentation, no tabs, Unix LF line endings, no trailing
+  whitespace.
+- Max line length 180 characters (aim for 132 where practical).
+- Classes and functions: `snake_case`. Global functions use the
+  `tool_mergeusers_` Frankenstyle prefix. Constants: `UPPERCASE`.
+- PHPDoc required on all files, classes, methods and functions. GPL licence
+  header required on every new source file.
+- Database access only through the `$DB` API, with placeholders for all
+  variables and table names wrapped in braces (`{tool_mergeusers}`) — never
+  raw connections or string-concatenated SQL.
+- Validate all input (`required_param()` / `optional_param()`, never raw
+  superglobals), check `require_login()` / `require_capability()` /
+  `require_sesskey()` on state-changing requests, and escape all output
+  (`s()`, `format_string()`, `format_text()`).
+- CI (`.github/workflows/moodle-ci.yml`) runs `phpcs`/`phpdoc` via
+  `moodle-plugin-ci`'s `codechecker` step, against the whole plugin
+  (including `tests/`), using the base `moodle` standard. It is a hard gate:
+  `codechecker_max_warnings: 0` means any warning, not just an error, fails
+  the build. `grunt`, `behat`, the release job and the version-bump check are
+  explicitly disabled (`disable_*: true`); `phpunit` runs normally.
+- **Before proposing any change, run the checks locally and make sure they
+  are clean — the GitHub Actions build must always stay green.**
+  - **`make ci-local`** is the primary/authoritative check: it runs the real
+    `moodle-plugin-ci` tool (`.bin/moodle-plugin-ci.phar`, gitignored,
+    downloaded on demand — see below) against every step
+    `.github/workflows/moodle-ci.yml` currently enables:
+    `phplint`, `codechecker --max-warnings=0`, `validate`, `savepoints`,
+    `mustache`, `phpdoc` (`grunt`/`behat`/release/version-bump-check are
+    disabled there, so have no local equivalent). This is the *same tool*
+    CI runs, not a separate reimplementation of it (see the warning about
+    `local_codechecker` below). Run a single step on its own with `make
+    ci-<step>` (e.g. `make ci-codechecker`). `phpunit` is intentionally not
+    part of this group — use `make pass-tests` for that, it needs no
+    `moodle-plugin-ci` at all.
+  - `.bin/moodle-plugin-ci.phar` tracks the latest GitHub release of
+    `moodlehq/moodle-plugin-ci`, refreshed at most once a day: any `ci-*`
+    target depends on `ensure-moodle-plugin-ci`, which is a no-op if the
+    phar's mtime is already today, or otherwise checks GitHub and downloads
+    only if a newer version exists (touching the phar either way, so it
+    won't check again until tomorrow). Run `make update-moodle-plugin-ci`
+    directly to force an immediate re-check/upgrade — e.g. right after a
+    `moodle-plugin-ci` release you know fixes something relevant, without
+    waiting for the daily window.
+  - Use `make phpcbf` to auto-fix coding-standard violations `make
+    ci-codechecker` reports — it runs `local_codechecker`'s bundled
+    `phpcbf`, since `moodle-plugin-ci` has no auto-fix command of its own.
+
+  **Don't use `local_codechecker`'s own phpcs check (`--standard=moodle` or
+  `moodle-extra`) to decide whether CI will pass — only `make ci-local`/
+  `make ci-codechecker` can answer that.** CI never runs the stricter
+  `moodle-extra` standard at all, and `local_codechecker`'s bundled
+  `moodle-cs`/`phpcsextra` version is a separate Moodle plugin with its own,
+  slower release cadence, so it can lag behind what `moodle-plugin-ci` (and
+  therefore CI) actually installs — specific sniffs can behave differently
+  release to release. This bit once: `Universal.OOStructures.
+  AlphabeticExtendsImplements` (interface order in a `class ... implements`
+  statement) sorted by a different key in an older `local_codechecker`
+  install vs. a current `moodle-plugin-ci.phar`, each insisting the
+  *other*'s order was wrong.
+
+## Testing requirements
+
+Merging users can be destructive and, once done, irreversible, and in some cases requires
+deleting conflicting records to keep the data model correct. Because of
+that, **no change to merge logic (table mergers, config layering, hooks,
+CLI, logging) should be considered complete without a test covering it** —
+this matches the project's own history, where almost every fix in
+`CHANGES.md` is accompanied by new or updated tests.
+
+Conventions:
+- One PHPUnit file per concern under `tests/`, extending
+  `\advanced_testcase`, calling `resetAfterTest(true)` in `setUp()`.
+- Tag every test method's class with `@group tool_mergeusers` plus a more
+  specific sub-group (e.g. `tool_mergeusers_config`); add `@covers` where it
+  clarifies intent.
+- Hook callback test doubles live in `tests/fixtures/`, as matched pairs of
+  a `*_hooks.php` registration file and a `*_callbacks.php` implementation
+  — follow the existing pattern when adding a new one.
+- Run tests with `vendor/bin/phpunit -c [public/]admin/tool/mergeusers`,
+  `vendor/bin/phpunit --group tool_mergeusers[_subgroup] --testdox`, or
+  `make pass-tests`.
+
+### Known coverage gaps — priorities for future work
+
+1. `classes/privacy/provider.php` has no test at all, despite the plugin's
+   entire purpose being to manipulate personal user data at scale.
+2. Transaction atomicity/rollback has no direct test beyond the
+   `--alwaysrollback` CLI flag; `database_transactions.php` itself is
+   untested.
+3. `classes/local/merger/finder/assign_submission_db_finder.php` — the real
+   DB-backed finder — is never exercised by tests; only
+   `in_memory_assign_submission_finder.php` is used.
+4. No tests for the `user_merged_success` / `user_merged_failure` events or
+   for the `olduser` / `keptuser` observers.
+5. Lower-level CLI classes (`gathering_merger`, `merge_request`,
+   `cli_gathering`) are only touched indirectly via `clioptions_test.php`.
+
+Any change that touches these areas should add the missing coverage rather
+than extend the gap.
+
+## Git and release conventions
+
+- Repository: `github.com/jpahullo/moodle-tool_mergeusers`.
+- **No `gh` CLI available in this environment.** Do not try it (it will
+  fail with "command not found") - go straight to `curl`/`WebFetch` against
+  the public GitHub REST API instead, e.g.
+  `https://api.github.com/repos/jpahullo/moodle-tool_mergeusers/pulls/<n>/comments`
+  for PR review comments, or `.../issues/<n>` for issue details. No token
+  is needed for read access to this public repo.
+- Commit messages follow `#<github-issue-number> - <short description>`,
+  every change tied to a GitHub issue. **The first line must start with a
+  leading space before the `#`** (` #393 - ...`, not `#393 - ...`): git's
+  default comment character is `#`, so a line starting with it at column 1
+  gets silently stripped as a comment by any editor-based git flow (merge
+  commit messages, interactive rebase, `git commit` without `-m`) - GitHub
+  itself also renders it more reliably with the leading space.
+- **Once a commit has been reviewed, address further feedback with a new
+  commit, not an amend.** A commit is "reviewed" once a human (Jordi) or an
+  automated reviewer (e.g. GitHub Copilot on a PR) has looked at it and left
+  feedback on it. Any later round of feedback on that same ticket/PR —
+  whether from Jordi or from an automated reviewer — gets its own new
+  commit on top, so the history visibly shows the code being improved in
+  response to review, instead of silently rewriting what was already
+  reviewed. Commits that have not yet been reviewed by anyone are still
+  fine to amend freely (e.g. while iterating before ever pushing, or between
+  pushes with no review in between). If it is unclear whether a change
+  belongs in a new commit or can still amend an existing one, ask rather
+  than assume.
+- **`CHANGES.md` attribution.** If a GitHub issue or PR being incorporated is
+  linked to a user other than Jordi (the maintainer), the `CHANGES.md` entry
+  at the point that actually incorporates their issue/commits must credit
+  them:
+  - `Thanks to @user for raising the issue.` when they only opened the
+    issue/PR (no code contributed).
+  - `Thanks to @user for their contributions.` when they contributed code to
+    the PR, fully or partially (code or review comments that shaped it both
+    count).
+  - When several external users are involved in the same PR/issue, list them
+    together, e.g. `Thanks to @user1 and @user2 for their contributions.`
+- Plugin version is a Moodle-style timestamp `YYYYMMDDvv`, tracked in both
+  `version.php` and `CHANGES.md`; releases happen roughly monthly to
+  bimonthly.
+- **Git tags for versions.** Every time `version.php`'s `$plugin->version` is
+  bumped, tag that exact number as an *annotated* tag (`git tag -a <version>
+  <commit> -m ""`, never a lightweight one) — matching this repository's
+  existing tag history. Create it yourself as part of finishing the PR that
+  contains the bump, without waiting to be asked. Where exactly to place it:
+  - If the version-bump commit reaches the target branch through a merge
+    commit (the normal case for a PR), tag the **merge commit** itself, not
+    the feature-branch commit that actually changed `version.php`.
+  - If the version-bump commit is committed **directly** to the target
+    branch (no separate PR/merge involved), tag that commit directly.
+  As with any other ref, creating the tag locally is fine on its own, but
+  **never push it** (`git push origin <tag>` / `--tags`) unless explicitly
+  asked to — same care as pushing a branch or commit.
+- Releases are pushed to the Moodle plugins directory manually. The
+  automated `moodle-release.yml` workflow (tag push -> `local_plugins_add_
+  version` webservice call) was removed after Moodle's migration from the
+  Plugins directory to the Moodle Marketplace broke the automatic upload.
+- **Never edit a `db/upgrade.php` savepoint once it has been committed** —
+  not even before it has been released or tagged. Any environment (a
+  developer's local install included) may already have run it, and Moodle
+  only re-runs an upgrade step whose savepoint number is newer than the
+  site's currently stored version; editing an already-executed step's body
+  silently never re-applies the edit anywhere it already ran, and the only
+  fix is a manual plugin downgrade + re-upgrade. Any further change to the
+  upgrade logic — even one line — must be a brand new `if ($oldversion <
+  ...)` block with its own new savepoint number.
+
+## Quick file reference
+
+| File | Purpose |
+|---|---|
+| `classes/local/user_merger.php` | Merge orchestrator, transaction boundary |
+| `classes/local/default_db_config.php` | Default table registry (indexes, user fields, mergers) |
+| `classes/local/merger/generic_table_merger.php` | Default per-table merge strategy |
+| `classes/local/logger.php` | Persists merge logs to the `tool_mergeusers` table |
+| `cli/climerger.php` | CLI entry point for interactive/bulk merging |
+| `README.md` | Full behavioural documentation |
+| `CHANGES.md` | Version history and release notes |

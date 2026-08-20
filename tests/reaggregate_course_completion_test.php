@@ -26,7 +26,7 @@ use tool_mergeusers\local\user_merger;
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
-require_once($CFG->libdir.'/completionlib.php');
+require_once($CFG->libdir . '/completionlib.php');
 
 /**
  * Testing reaggregation of courses completion.
@@ -39,6 +39,7 @@ require_once($CFG->libdir.'/completionlib.php');
  * @author    Jordi Pujol Ahulló <jordi.pujol@urv.cat>
  * @copyright 2025 Universitat Rovira i Virgili (https://www.urv.cat)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers \tool_mergeusers\local\user_merger
  */
 final class reaggregate_course_completion_test extends advanced_testcase {
     /**
@@ -52,7 +53,7 @@ final class reaggregate_course_completion_test extends advanced_testcase {
     public function test_reaggregate_field_is_updated(): void {
         // Inspired by lib/tests/completionlib_test.php::test_aggregate_completions().
         global $DB, $CFG;
-        require_once($CFG->dirroot.'/completion/criteria/completion_criteria_activity.php');
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria_activity.php');
         $this->resetAfterTest(true);
         $time = time();
 
@@ -100,10 +101,10 @@ final class reaggregate_course_completion_test extends advanced_testcase {
             'timecompleted' => 0,
         ];
 
-        $cc = array(
+        $cc = [
             'course'    => $course->id,
-            'userid'    => $fromstudent->id
-        );
+            'userid'    => $fromstudent->id,
+        ];
         $ccompletion = new completion_completion($cc);
         $completion = $ccompletion->mark_inprogress($time);
 
@@ -118,7 +119,6 @@ final class reaggregate_course_completion_test extends advanced_testcase {
         $result = $DB->get_record('course_completions', ['userid' => $tostudent->id]);
         $this->assertFalse($result);
         aggregate_completions(0);
-
 
         $mut = new user_merger();
         // This merge already invokes the callback for reaggregate course completion.

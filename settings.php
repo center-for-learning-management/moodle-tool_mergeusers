@@ -29,6 +29,9 @@
 
 use tool_mergeusers\local\database_transactions;
 use tool_mergeusers\local\settings\json_setting;
+use tool_mergeusers\local\settings\logpagesize_setting;
+use tool_mergeusers\local\settings\logsearchmaxlength_setting;
+use tool_mergeusers\local\settings\toggle_setting;
 use tool_mergeusers\local\config;
 
 defined('MOODLE_INTERNAL') || die;
@@ -125,7 +128,7 @@ if ($ADMIN->fulltree) {
     }
 
     // Add configuration for making user suspension optional.
-    $generalsettings->add(new admin_setting_configcheckbox(
+    $generalsettings->add(new toggle_setting(
         'tool_mergeusers/suspenduser',
         get_string('suspenduser_setting', 'tool_mergeusers'),
         get_string('suspenduser_setting_desc', 'tool_mergeusers'),
@@ -134,7 +137,7 @@ if ($ADMIN->fulltree) {
 
     $supportinglang = (database_transactions::are_supported()) ? 'transactions_supported' : 'transactions_not_supported';
 
-    $generalsettings->add(new admin_setting_configcheckbox(
+    $generalsettings->add(new toggle_setting(
         'tool_mergeusers/transactions_only',
         get_string('transactions_setting', 'tool_mergeusers'),
         get_string('transactions_setting_desc', 'tool_mergeusers') . '<br /><br />' .
@@ -151,6 +154,23 @@ if ($ADMIN->fulltree) {
         $exceptionoptions->options
     ));
 
+    $profilefieldoptions = tool_mergeusers_build_profilefields_options();
+    if (!empty($profilefieldoptions->options)) {
+        $generalsettings->add(new toggle_setting(
+            'tool_mergeusers/searchbyprofilefieldsenabled',
+            get_string('searchbyprofilefieldsenabled', 'tool_mergeusers'),
+            get_string('searchbyprofilefieldsenabled_desc', 'tool_mergeusers'),
+            0
+        ));
+        $generalsettings->add(new admin_setting_configmultiselect(
+            'tool_mergeusers/searchbyprofilefields',
+            get_string('searchbyprofilefields', 'tool_mergeusers'),
+            get_string('searchbyprofilefields_desc', 'tool_mergeusers'),
+            [], // Default value: no fields allowed.
+            $profilefieldoptions->options
+        ));
+    }
+
     // Quiz attempts.
     $quizoptions = tool_mergeusers_build_quiz_options();
     $generalsettings->add(new admin_setting_configselect(
@@ -161,12 +181,73 @@ if ($ADMIN->fulltree) {
         $quizoptions->options
     ));
 
-    $generalsettings->add(new admin_setting_configcheckbox(
+    // Lesson attempts.
+    $lessonoptions = tool_mergeusers_build_lesson_options();
+    $generalsettings->add(new admin_setting_configselect(
+        'tool_mergeusers/lessonattemptsaction',
+        get_string('lessonattemptsaction', 'tool_mergeusers'),
+        get_string('lessonattemptsaction_desc', 'tool_mergeusers', $lessonoptions->allstrings),
+        $lessonoptions->defaultkey,
+        $lessonoptions->options
+    ));
+
+    $generalsettings->add(new admin_setting_configselect(
+        'tool_mergeusers/maxsearchresults',
+        get_string('maxsearchresults_setting', 'tool_mergeusers'),
+        get_string('maxsearchresults_setting_desc', 'tool_mergeusers'),
+        25,
+        [25 => 25, 50 => 50, 100 => 100, 200 => 200],
+    ));
+
+    $generalsettings->add(new logpagesize_setting(
+        'tool_mergeusers/logpagesize',
+        get_string('logpagesize_setting', 'tool_mergeusers'),
+        get_string('logpagesize_setting_desc', 'tool_mergeusers'),
+        '100',
+    ));
+
+    $generalsettings->add(new logsearchmaxlength_setting(
+        'tool_mergeusers/logsearchmaxlength',
+        get_string('logsearchmaxlength_setting', 'tool_mergeusers'),
+        get_string('logsearchmaxlength_setting_desc', 'tool_mergeusers'),
+        '1000',
+    ));
+
+    $generalsettings->add(new toggle_setting(
         'tool_mergeusers/uniquekeynewidtomaintain',
         get_string('uniquekeynewidtomaintain', 'tool_mergeusers'),
         get_string('uniquekeynewidtomaintain_desc', 'tool_mergeusers'),
         1
     ));
+
+    $generalsettings->add(new toggle_setting(
+        'tool_mergeusers/mergepicture',
+        get_string('mergepicture', 'tool_mergeusers'),
+        get_string('mergepicture_desc', 'tool_mergeusers'),
+        1
+    ));
+
+    $generalsettings->add(new toggle_setting(
+        'tool_mergeusers/enableadhocmerge',
+        get_string('enableadhocmerge', 'tool_mergeusers'),
+        get_string('enableadhocmerge_desc', 'tool_mergeusers'),
+        0
+    ));
+
+    if (
+        (bool)(int)get_config('tool_mergeusers', 'enableadhocmerge')
+        && tool_mergeusers_is_adhoc_concurrency_limit_overridden()
+    ) {
+        $generalsettings->add(new admin_setting_description(
+            'tool_mergeusers/adhocconcurrencywarning',
+            new lang_string('adhocconcurrencywarning', 'tool_mergeusers'),
+            new lang_string(
+                'adhocconcurrencywarning_desc',
+                'tool_mergeusers',
+                \tool_mergeusers\task\merge_users_task::class,
+            ),
+        ));
+    }
 
     $fields = tool_mergeusers_inform_about_pending_user_profile_fields();
     if ($fields->exists) {

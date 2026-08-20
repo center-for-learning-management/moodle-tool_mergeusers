@@ -28,11 +28,15 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use core\task\manager;
+use tool_mergeusers\local\logger;
+use tool_mergeusers\local\profile_fields;
 use tool_mergeusers\local\selected_users_to_merge;
 use tool_mergeusers\local\user_merger;
 use tool_mergeusers\local\user_searcher;
 use tool_mergeusers\output\merge_user_form;
 use tool_mergeusers\output\user_select_table;
+use tool_mergeusers\task\merge_users_task;
 
 require('../../../config.php');
 
@@ -128,6 +132,41 @@ if (!empty($option)) {
                 break; // Break execution for error.
             }
 
+            $adhocenabled = (bool)(int)get_config('tool_mergeusers', 'enableadhocmerge');
+            if ($adhocenabled) {
+                global $USER;
+
+                // Create pending log entry first.
+                $logger = new \tool_mergeusers\local\logger();
+                $logid = $logger->create_pending_log($touser->id, $fromuser->id, $USER->id);
+
+                if (!$logid) {
+                    $renderer->mu_error(get_string('error_log_creation_failed', 'tool_mergeusers'));
+                    break;
+                }
+
+                $task = new merge_users_task();
+                $task->set_custom_data([
+                    'toid' => $touser->id,
+                    'fromid' => $fromuser->id,
+                    'logid' => $logid,
+                ]);
+                if (!empty($USER->id)) {
+                    $task->set_userid($USER->id);
+                }
+                manager::queue_adhoc_task($task);
+
+                $currentuserselection->clear_users_selection();
+
+                $redirecturl = new moodle_url('/admin/tool/mergeusers/index.php');
+                $message = get_string('mergeusersqueued', 'tool_mergeusers', (object)[
+                    'fromuser' => $renderer->show_user($fromuser->id, $fromuser),
+                    'touser' => $renderer->show_user($touser->id, $touser),
+                    'logid' => $renderer->render_logid($logid),
+                ]);
+                redirect($redirecturl, $message, 0, \core\output\notification::NOTIFY_SUCCESS);
+            }
+
             // Merge the users.
             $log = [];
             $success = true;
@@ -136,8 +175,21 @@ if (!empty($option)) {
             // Reset mut session to let the user choose another pair of users to merge.
             $currentuserselection->clear_users_selection();
 
-            // Render results page.
-            echo $renderer->results_page($touser, $fromuser, $success, $log, $logid);
+            // Render results page from the persisted log and live (post-merge) user
+            // data, exactly like log.php?id=$logid does, instead of the stale
+            // pre-merge objects and the bare actions list.
+            $storedlog = (new logger())->detail_from($logid);
+            $to = logger::live_user_or_deleted_placeholder($storedlog->touserid);
+            $from = logger::live_user_or_deleted_placeholder($storedlog->fromuserid);
+            echo $renderer->results_page(
+                $to,
+                $from,
+                $storedlog->status,
+                $storedlog->log,
+                $storedlog->id,
+                $storedlog->timecreated,
+                $storedlog->timemodified,
+            );
             break;
 
         // We have both users to merge selected, but we want to change any of them.
@@ -160,13 +212,60 @@ if (!empty($option)) {
 } else if ($data) {
     // If there is a search argument use this instead of advanced form.
     if (!empty($data->searchgroup['searcharg'])) {
-        $searchedusers = $usersearcher->search_users($data->searchgroup['searcharg'], $data->searchgroup['searchfield']);
+        $searchterm = $data->searchgroup['searcharg'];
+        $searchfield = $data->searchgroup['searchfield'];
+
+        if ($searchfield === null) {
+            // The submitted field (most likely a custom profile field id) no longer
+            // matches any option the form currently defines - e.g. another
+            // administrator disabled/deselected it since this page was loaded.
+            $rawsearchfield = optional_param_array('searchgroup', [], PARAM_RAW_TRIMMED)['searchfield'] ?? '';
+            redirect(
+                new moodle_url('/admin/tool/mergeusers/index.php'),
+                profile_fields::unavailable_field_notice($rawsearchfield),
+                0,
+                \core\output\notification::NOTIFY_WARNING,
+            );
+        }
+
+        $maxresults = (int) get_config('tool_mergeusers', 'maxsearchresults');
+        if ($maxresults < 1) {
+            $maxresults = 25; // Defensive fallback: the setting has not been saved yet on this site.
+        }
+
+        $totalmatches = $usersearcher->count_users($searchterm, $searchfield);
+        $searchedusers = $usersearcher->search_users($searchterm, $searchfield, $maxresults);
         $userselecttable = new user_select_table($searchedusers, $renderer);
 
-        echo $renderer->index_page($mergeuserform, $renderer::INDEX_PAGE_SEARCH_AND_SELECT_STEP, $userselecttable);
+        $toomanyresults = ($totalmatches > $maxresults) ? (object) [
+            'count' => $totalmatches,
+            'shown' => count($searchedusers),
+            'search' => $searchterm,
+        ] : null;
+
+        echo $renderer->index_page(
+            $mergeuserform,
+            $renderer::INDEX_PAGE_SEARCH_AND_SELECT_STEP,
+            $userselecttable,
+            $toomanyresults,
+        );
 
         // Only run this step if there are both a new and old userids.
     } else if (!empty($data->oldusergroup['olduserid']) && !empty($data->newusergroup['newuserid'])) {
+        if ($data->oldusergroup['olduseridtype'] === null || $data->newusergroup['newuseridtype'] === null) {
+            // Same as above: one of the field types (most likely a custom profile
+            // field id) no longer matches any option the form currently defines.
+            $rawoldtype = optional_param_array('oldusergroup', [], PARAM_RAW_TRIMMED)['olduseridtype'] ?? '';
+            $rawnewtype = optional_param_array('newusergroup', [], PARAM_RAW_TRIMMED)['newuseridtype'] ?? '';
+            $rawtype = $data->oldusergroup['olduseridtype'] === null ? $rawoldtype : $rawnewtype;
+            redirect(
+                new moodle_url('/admin/tool/mergeusers/index.php'),
+                profile_fields::unavailable_field_notice($rawtype),
+                0,
+                \core\output\notification::NOTIFY_WARNING,
+            );
+        }
+
         // Get and verify the userids from the selection form usig the verify_user function (second field is column).
         [$olduser, $oumessage] = $usersearcher->verify_user($data->oldusergroup['olduserid'], $data->oldusergroup['olduseridtype']);
         [$newuser, $numessage] = $usersearcher->verify_user($data->newusergroup['newuserid'], $data->newusergroup['newuseridtype']);

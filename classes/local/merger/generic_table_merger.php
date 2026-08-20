@@ -28,6 +28,7 @@ namespace tool_mergeusers\local\merger;
 use coding_exception;
 use dml_exception;
 use Exception;
+use stdClass;
 
 /**
  * Generic implementation of a table_merger.
@@ -137,38 +138,19 @@ class generic_table_merger implements table_merger {
         global $DB;
 
         $otherfieldsstr = implode(', ', $otherfields);
-        $sql = 'SELECT id, ' . $userfield . ', ' . $otherfieldsstr .
-            ' FROM {' . $data['tableName'] . '} ' .
-            ' WHERE ' . $userfield . ' IN ( ?, ?)';
-        $result = $DB->get_records_sql($sql, [$data['fromid'], $data['toid']]);
+        [$sql, $params] = $this->build_sql_query($data, $userfield, $otherfieldsstr);
+        $result = $DB->get_records_sql($sql, $params);
 
         $itemarr = [];
         $idstoremove = [];
         foreach ($result as $id => $resobj) {
-            $keyfromother = [];
-            foreach ($otherfields as $of) {
-                $keyfromother[] = $resobj->$of;
-            }
-            $keyfromotherstr = implode('-', $keyfromother);
+            $keyfromotherstr = $this->build_group_key($resobj, $otherfields);
             $itemarr[$keyfromotherstr][$resobj->$userfield] = $id;
         }
-        unset($result);
 
-        foreach ($itemarr as $otherinfo) {
-            // If and only if we have only one result, and it is from the current user => update record.
-            if (count($otherinfo) == 1) {
-                if (isset($otherinfo[$data['fromid']])) {
-                    $recordstomodify[$otherinfo[$data['fromid']]] = $otherinfo[$data['fromid']];
-                }
-            } else {
-                // Both users appear in the group.
-                // Confirm both records exist, preventing problems from inconsistent data in database.
-                if (isset($otherinfo[$data['toid']]) && isset($otherinfo[$data['fromid']])) {
-                    $useridtoclean = $this->get_user_id_to_delete_on_conflicts($data['toid'], $data['fromid']);
-                    $idstoremove[$otherinfo[$useridtoclean]] = $otherinfo[$useridtoclean];
-                }
-            }
-        }
+        $this->find_ids_to_update_and_remove($itemarr, $result, $data, $recordstomodify, $idstoremove);
+
+        unset($result);
         unset($itemarr);
         // We know that idstoremove have always to be removed and NOT to be updated.
         foreach ($idstoremove as $id) {
@@ -181,6 +163,116 @@ class generic_table_merger implements table_merger {
 
         unset($idstoremove);
         unset($sql);
+    }
+
+    /**
+     * Builds the grouping key used to detect compound-index conflicts for a given record.
+     *
+     * The default implementation simply concatenates the values of $otherfields, so that
+     * records sharing the same combination of those column values are grouped together.
+     * This method can be overridden by subclasses whose real uniqueness constraint depends
+     * on data outside the fixed $otherfields list (e.g. a flag on a related table that
+     * changes which columns actually make a record unique for a given user).
+     *
+     * @param stdClass $resobj the record being grouped, as returned by self::build_sql_query().
+     * @param array $otherfields table's field names that refer to the other members of the compound index.
+     * @return string the grouping key for this record.
+     */
+    protected function build_group_key(stdClass $resobj, array $otherfields): string {
+        $keyfromother = [];
+        foreach ($otherfields as $of) {
+            $keyfromother[] = $resobj->$of;
+        }
+        return implode('-', $keyfromother);
+    }
+
+    /**
+     * Generates an SQL query that selects records from a table based on the user field ID.
+     *
+     * This method can be overriden by subclasses to adapt the SQL query to their needs.
+     *
+     * @param array $data Array containing the table name, `fromid`, and `toid` for the merging operation.
+     * @param string $userfield The field name in the table that refers to the user ID.
+     * @param string $otherfieldsstr A string representing the other fields in the compound index, separated by commas.
+     * @return array Array with the form [$sql, $params] to be used.
+     */
+    protected function build_sql_query(array $data, string $userfield, string $otherfieldsstr): array {
+        $sql = 'SELECT id, ' . $userfield . ', ' . $otherfieldsstr .
+            ' FROM {' . $data['tableName'] . '} ' .
+            ' WHERE ' . $userfield . ' IN ( ?, ?)';
+        return [$sql, [$data['fromid'], $data['toid']]];
+    }
+
+    /**
+     * Finds the records to update and remove from a compound index.
+     *
+     * This method can be overridden by subclasses to adapt the logic to their needs.
+     *
+     * At current implementation, $result is not used, but it is provided for subclasses
+     * just in case they have extra detail returned from self::build_sql_query() implementation.
+     *
+     * @param array $itemarr The grouped records from the compound index for a specific combination of other fields.
+     * @param array $result The records retrieved from the database.
+     * @param array $data The merging operation details, including `fromid`, `toid`, and table name.
+     * @param array $recordstomodify Array to store the IDs of records that need to be updated.
+     * @param array $idstoremove Array to store the IDs of records that need to be removed.
+     * @return void
+     */
+    protected function find_ids_to_update_and_remove(
+        array $itemarr,
+        array $result,
+        array $data,
+        array &$recordstomodify,
+        array &$idstoremove,
+    ): void {
+        foreach ($itemarr as $otherinfo) {
+            // If and only if we have only one result, and it is from the current user => update record.
+            if (count($otherinfo) == 1) {
+                if (isset($otherinfo[$data['fromid']])) {
+                    $recordstomodify[$otherinfo[$data['fromid']]] = $otherinfo[$data['fromid']];
+                }
+            } else {
+                $this->process_duplicated_records_for_compound_index(
+                    $otherinfo,
+                    $result,
+                    $data,
+                    $recordstomodify,
+                    $idstoremove
+                );
+            }
+        }
+    }
+
+    /**
+     * Prevents database and PHP processing errors due to multiple records for the same compound index.
+     *
+     * To do so, it removes the records for one of the users, either the user to keep or the user to remove,
+     * depending on the configuration setting 'uniquekeynewidtomaintain'.
+     *
+     * In current implementation, there is only need to check whether to delete some records.
+     * However, the method signature provides also the possibility to update records,
+     * just in case a subclass needs to do so.
+     *
+     * @param array $conflictingrecords The grouped records from the compound index for a specific combination of other fields.
+     * @param array $result The records retrieved from the database.
+     * @param array $data The merging operation details, including `fromid`, `toid`, and table name.
+     * @param array $recordstomodify Array to store the IDs of records that need to be updated.
+     * @param array $idstoremove Array to store the IDs of records that need to be removed.
+     * @return void
+     */
+    protected function process_duplicated_records_for_compound_index(
+        array $conflictingrecords,
+        array $result,
+        array $data,
+        array &$recordstomodify,
+        array &$idstoremove,
+    ): void {
+        // Both users appear in the group.
+        // Confirm both records exist, preventing problems from inconsistent data in database.
+        if (isset($conflictingrecords[$data['toid']]) && isset($conflictingrecords[$data['fromid']])) {
+            $useridtoclean = $this->get_user_id_to_delete_on_conflicts($data['toid'], $data['fromid']);
+            $idstoremove[$conflictingrecords[$useridtoclean]] = $conflictingrecords[$useridtoclean];
+        }
     }
 
     /**
@@ -334,8 +426,20 @@ class generic_table_merger implements table_merger {
      * @param int $fromid user.id from user to remove.
      * @return int user.id from which records have to be deleted.
      */
-    private function get_user_id_to_delete_on_conflicts(int $toid, int $fromid): int {
+    protected function get_user_id_to_delete_on_conflicts(int $toid, int $fromid): int {
         return $this->newidtomaintain ? $fromid : $toid;
+    }
+
+    /**
+     * Informs the user.id from which records have to be kept when conflicting
+     * records arises.
+     *
+     * @param int $toid user.id from user to keep.
+     * @param int $fromid user.id from user to remove.
+     * @return int user.id from which records have to be kept.
+     */
+    protected function get_user_id_to_keep_on_conflicts(int $toid, int $fromid): int {
+        return $this->newidtomaintain ? $toid : $fromid;
     }
 
     /**
@@ -366,7 +470,7 @@ class generic_table_merger implements table_merger {
      * List the records candidate for being updated.
      *
      * @param array $data detail of merging
-     * @param string $fieldName field name to look for the user.id from the user to remove.
+     * @param string $fieldname field name to look for the user.id from the user to remove.
      * @return array list of matching records' ids.
      * @throws dml_exception
      */

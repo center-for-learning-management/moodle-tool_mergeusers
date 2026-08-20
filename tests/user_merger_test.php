@@ -19,6 +19,7 @@ namespace tool_mergeusers;
 use advanced_testcase;
 use dml_exception;
 use moodle_exception;
+use tool_mergeusers\local\logger;
 use tool_mergeusers\local\user_merger;
 
 /**
@@ -28,6 +29,7 @@ use tool_mergeusers\local\user_merger;
  * @author    Jordi Pujol Ahulló <jordi.pujol@urv.cat>
  * @copyright Universitat Rovira i Virgili (https://www.urv.cat)
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers \tool_mergeusers\local\user_merger
  */
 final class user_merger_test extends advanced_testcase {
     public function setUp(): void {
@@ -74,7 +76,7 @@ final class user_merger_test extends advanced_testcase {
      * @throws dml_exception
      * @throws moodle_exception
      */
-    public function test_failed_merge_with_one_deleted_user() {
+    public function test_failed_merge_with_one_deleted_user(): void {
         global $DB;
 
         // Setup two users to merge.
@@ -125,7 +127,7 @@ final class user_merger_test extends advanced_testcase {
      * @throws dml_exception
      * @throws moodle_exception
      */
-    public function test_failed_merge_with_two_deleted_users() {
+    public function test_failed_merge_with_two_deleted_users(): void {
         global $DB;
 
         // Setup two users to merge.
@@ -159,5 +161,68 @@ final class user_merger_test extends advanced_testcase {
         );
 
         $this->assertCount(2, $matchingerror);
+    }
+
+    /**
+     * Testing that merge() forwards an optional searched-field hint for a side that
+     * could not be resolved (id <= 0) into the stored log's snapshot, and that calling
+     * merge() with only the original 2 positional arguments - as every call site
+     * predating this feature does - stores no hint at all, unchanged from before.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_tool
+     * @throws dml_exception
+     * @throws moodle_exception
+     */
+    public function test_merge_forwards_optional_searched_field_hint_and_stays_compatible_without_it(): void {
+        $usertokeep = $this->getDataGenerator()->create_user();
+
+        $mut = new user_merger();
+        [, , $logidwithhint] = $mut->merge(
+            $usertokeep->id,
+            0,
+            null,
+            null,
+            ['field' => logger::SEARCHED_FIELD_USERNAME, 'value' => 'jsmith123'],
+        );
+
+        $logger = new logger();
+        $storedwithhint = $logger->detail_from($logidwithhint);
+        $this->assertSame('jsmith123', $storedwithhint->log->user_snapshots->from_user->username);
+
+        [, , $logidlegacy] = $mut->merge($usertokeep->id, 0);
+        $storedlegacy = $logger->detail_from($logidlegacy);
+        $this->assertNull($storedlegacy->log->user_snapshots->from_user->username);
+    }
+
+    /**
+     * Testing that when NEITHER side could be resolved (toid = fromid = 0, a real
+     * case for a gathering that searches both users and finds neither), this is
+     * reported as two invalid/not-found users - not as "the same user", which would
+     * hide that both sides are actually unresolved. Also verifies both sides' hints
+     * reach the stored log snapshot independently.
+     *
+     * @group tool_mergeusers
+     * @group tool_mergeusers_tool
+     * @throws dml_exception
+     * @throws moodle_exception
+     */
+    public function test_merge_with_both_sides_unresolved_reports_invalid_users_not_same_user(): void {
+        $mut = new user_merger();
+        [$success, $log, $logid] = $mut->merge(
+            0,
+            0,
+            null,
+            ['field' => logger::SEARCHED_FIELD_USERNAME, 'value' => 'tokeep123'],
+            ['field' => logger::SEARCHED_FIELD_USERNAME, 'value' => 'toremove123'],
+        );
+
+        $this->assertFalse($success);
+        $this->assertStringNotContainsString(get_string('errorsameuser', 'tool_mergeusers'), implode(' ', $log));
+
+        $logger = new logger();
+        $stored = $logger->detail_from($logid);
+        $this->assertSame('tokeep123', $stored->log->user_snapshots->to_user->username);
+        $this->assertSame('toremove123', $stored->log->user_snapshots->from_user->username);
     }
 }

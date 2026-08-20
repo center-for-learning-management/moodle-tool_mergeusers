@@ -27,7 +27,7 @@ use tool_mergeusers\local\logger;
 
 require('../../../config.php');
 
-global $CFG, $DB, $PAGE;
+global $CFG, $PAGE;
 require_once($CFG->libdir . '/adminlib.php');
 
 // Report all PHP errors.
@@ -53,20 +53,8 @@ if (empty($log)) {
     );
 }
 
-$from = $DB->get_record('user', ['id' => $log->fromuserid]);
-if (!$from) {
-    $from = new stdClass();
-    $from->id = $log->fromuserid;
-    $from->username = get_string('deleted');
-    $from->deleted = 1;
-}
+// Fetch current user data (dynamic).
+$from = logger::live_user_or_deleted_placeholder($log->fromuserid);
+$to = logger::live_user_or_deleted_placeholder($log->touserid);
 
-$to = $DB->get_record('user', ['id' => $log->touserid]);
-if (!$to) {
-    $to = new stdClass();
-    $to->id = $log->touserid;
-    $to->username = get_string('deleted');
-    $to->deleted = 1;
-}
-
-echo $renderer->results_page($to, $from, $log->success, $log->log, $log->id);
+echo $renderer->results_page($to, $from, $log->status, $log->log, $log->id, $log->timecreated, $log->timemodified);

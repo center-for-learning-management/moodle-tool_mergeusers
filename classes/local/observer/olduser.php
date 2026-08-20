@@ -28,11 +28,21 @@
 namespace tool_mergeusers\local\observer;
 
 use context_user;
-use dml_exception;
+use dml_missing_record_exception;
+use stdClass;
 use tool_mergeusers\event\user_merged_success;
+use tool_mergeusers\local\logger;
+use tool_mergeusers\local\picture_merger;
 
 /**
  * Observer for the user_merged_success event for suspending the user to remove.
+ *
+ * Also drives, in this specific order, the profile picture merge (see {@see picture_merger}): it
+ * must run strictly before the placeholder image is applied to the removed user below, and only
+ * after the merge has definitively committed - which is exactly when this event fires. Both actions
+ * are combined into this single observer, rather than split into two separately registered
+ * observers, because Moodle does not formally guarantee execution order between two observers on
+ * the same event.
  *
  * @package   tool_mergeusers
  * @author    Jordi Pujol-Ahulló <jordi.pujol@urv.cat>
@@ -43,43 +53,81 @@ use tool_mergeusers\event\user_merged_success;
  */
 class olduser {
     /**
-     * Suspend the old user, by suspending its account, and updating the profile picture
-     * to a generic one
+     * Merges the profile picture, then suspends the old user's account and updates its own
+     * profile picture to a generic placeholder one.
      *
      * @param user_merged_success $event Event data.
-     * @throws dml_exception
      */
     public static function old_user_suspend(user_merged_success $event): void {
-        // 0. Check configuration to see if the old user has to be suspended.
-        $suspenduser = (bool) (int) get_config('tool_mergeusers', 'suspenduser');
-        if (!$suspenduser) {
-            return;
-        }
-
-        // Suspend user and update the profile picture.
         global $CFG, $DB;
         require_once($CFG->libdir . '/gdlib.php');
 
-        $useridtoremove = $event->other['usersinvolved']['fromid'];
+        $toid = $event->get_new_user_id();
+        $fromid = $event->get_old_user_id();
+        $logid = $event->get_log_id();
 
-        // 1. update suspended flag.
-        $usertoremove = new \stdClass();
-        $usertoremove->id = $useridtoremove;
-        $usertoremove->suspended = 1;
-        $usertoremove->timemodified = time();
-        $DB->update_record('user', $usertoremove);
+        $newactions = [];
 
-        // 2. update profile picture.
-        // Get source, common image.
-        $fullpath = dirname(__DIR__, 2) . "/pix/suspended.jpg";
-        if (!file_exists($fullpath)) {
-            return; // Do nothing; aborting, given that the image does not exist. This should not happen.
+        // 1. Merge the profile picture, independently of whether the removed user is suspended below.
+        picture_merger::merge_picture($toid, $fromid, $newactions, $logid);
+
+        // 2. Check configuration to see if the old user has to be suspended.
+        $suspenduser = (bool) (int) get_config('tool_mergeusers', 'suspenduser');
+        $suspendedplaceholderpicture = null;
+        if ($suspenduser) {
+            // 2.1. Update suspended flag.
+            $usertoremove = new stdClass();
+            $usertoremove->id = $fromid;
+            $usertoremove->suspended = 1;
+            $usertoremove->timemodified = time();
+            $DB->update_record('user', $usertoremove);
+
+            // 2.2. Update profile picture: get source, common image.
+            $fullpath = dirname(__DIR__, 3) . "/pix/suspended.jpg";
+            if (file_exists($fullpath)) {
+                // Place the common image as the profile picture.
+                $context = context_user::instance($fromid);
+                if (($newrev = process_new_icon($context, 'user', 'icon', 0, $fullpath))) {
+                    $DB->set_field('user', 'picture', $newrev, ['id' => $fromid]);
+                    $suspendedplaceholderpicture = $newrev;
+                }
+            } // Else: do nothing, aborting, given that the image does not exist. This should not happen.
         }
 
-        // Place the common image as the profile picture.
-        $context = context_user::instance($useridtoremove);
-        if (($newrev = process_new_icon($context, 'user', 'icon', 0, $fullpath))) {
-            $DB->set_field('user', 'picture', $newrev, ['id' => $useridtoremove]);
+        self::persist_actions($logid, $newactions, $suspendedplaceholderpicture);
+    }
+
+    /**
+     * Appends $newactions to the merge's already persisted log, and records
+     * $suspendedplaceholderpicture on it, if any.
+     *
+     * update_log_status() replaces the whole "actions" list, rather than appending to it, so the
+     * existing ones are read first and combined with the new ones here.
+     *
+     * @param int $logid
+     * @param array $newactions
+     * @param int|null $suspendedplaceholderpicture
+     * @return void
+     */
+    private static function persist_actions(int $logid, array $newactions, ?int $suspendedplaceholderpicture): void {
+        if ($logid <= 0 || (empty($newactions) && $suspendedplaceholderpicture === null)) {
+            return;
         }
+
+        $logger = new logger();
+        try {
+            $existing = $logger->detail_from($logid);
+        } catch (dml_missing_record_exception $e) {
+            debugging('Cannot append picture actions to non-existent merge log: ' . $logid, DEBUG_DEVELOPER);
+            return;
+        }
+
+        $existingactions = (array) ($existing->log->actions ?? []);
+        $logger->update_log_status(
+            $logid,
+            $existing->status,
+            array_merge($existingactions, $newactions),
+            $suspendedplaceholderpicture,
+        );
     }
 }

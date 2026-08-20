@@ -49,8 +49,7 @@ require_once($CFG->libdir . '/formslib.php');
  * @copyright Univeristy of Wisconsin - Madison
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class review_user_form extends moodleform
-{
+class review_user_form extends moodleform {
     /** @var user_review_table Table to select users. */
     protected user_review_table $urt;
     /** @var renderer_base renderer */
@@ -99,7 +98,13 @@ class review_user_form extends moodleform
         if ($this->reviewstep) {
             $mergeurl->param('option', 'mergeusers');
             $mergeusersbutton = new single_button($mergeurl, get_string('mergeusers', 'tool_mergeusers'));
-            $mergeusersbutton->add_confirm_action(get_string('mergeusers_confirm', 'tool_mergeusers'));
+            $adhocenabled = (bool)(int)get_config('tool_mergeusers', 'enableadhocmerge');
+            if ($adhocenabled) {
+                $confirmmessage = get_string('mergeusers_confirm_adhoc', 'tool_mergeusers');
+            } else {
+                $confirmmessage = get_string('mergeusers_confirm', 'tool_mergeusers');
+            }
+            $mergeusersbutton->add_confirm_action($confirmmessage);
             $buttonarray[0][] = $this->output->render($mergeusersbutton);
         } else if (count($this->urt->data) === 2) {
             $mergeurl->param('option', 'continueselection');
@@ -119,7 +124,7 @@ class review_user_form extends moodleform
             $mform->disable_form_change_checker();
         }
         $htmltable = new html_table();
-        $htmltable->attributes['class'] = 'clearfix';
+        $htmltable->attributes['class'] = 'clearfix table-reboot';
         $htmltable->data = $buttonarray;
 
         $mform->addElement('static', 'buttonar', '', html_writer::table($htmltable));
