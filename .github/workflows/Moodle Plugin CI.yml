@@ -173,12 +173,27 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           standardfile="$(pwd)/plugin/.github/moodle-ci/phpcs-exclusions.xml"
+          maxwarningsfile="$(pwd)/plugin/.github/moodle-ci/phpcs-maxwarnings"
+
+          # Default: fail on any warning. Overridable via phpcs-maxwarnings.
+          maxwarnings=0
+          if [ -f "$maxwarningsfile" ]; then
+            # Take the first non-comment, non-blank line.
+            value="$(grep -vE '^[[:space:]]*(#|$)' "$maxwarningsfile" | head -n1 | tr -d '[:space:]')"
+            if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+              maxwarnings="$value"
+              echo "Using custom max-warnings from $maxwarningsfile: $maxwarnings"
+            else
+              echo "::warning::$maxwarningsfile does not contain a valid integer, falling back to --max-warnings 0."
+            fi
+          fi
+
           if [ -f "$standardfile" ]; then
             echo "Using custom phpcs standard: $standardfile"
-            moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings 0
+            moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings "$maxwarnings"
           else
             echo "No custom phpcs standard found, using default moodle standard."
-            moodle-plugin-ci phpcs --max-warnings 0
+            moodle-plugin-ci phpcs --max-warnings "$maxwarnings"
           fi
 
       - name: Moodle PHPDoc Checker
