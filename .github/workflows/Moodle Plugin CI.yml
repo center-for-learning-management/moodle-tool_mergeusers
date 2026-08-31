@@ -1,0 +1,588 @@
+# Moodle Plugin CI
+# This workflow runs the standard Moodle plugin CI checks and automatically fixes
+# common issues (code style, JS/SCSS linting, AMD asset rebuilds) by creating
+# a pull request with the fixes.
+#
+# It consists of two jobs:
+#   - test: runs the full test suite on a single configuration (PHP 8.3, MariaDB, Moodle 4.5).
+#           If any check fails, the job still completes so we can collect all errors.
+#   - fix-and-pr: runs after all test legs finish. It installs the plugin again,
+#           applies auto-fixers (phpcbf, eslint --fix, stylelint --fix, grunt amd),
+#           and if changes are detected, opens a pull request with the fixes.
+name: Moodle Plugin CI
+
+on:
+  push:
+    # Ignore branches that are created by this workflow to prevent infinite loops.
+    branches-ignore:
+      - moodle-ci-fixes**
+
+  # Allow manual trigger with optional dependency overrides.
+  workflow_dispatch:
+    inputs:
+      dependencies_override:
+        description: >
+          Override plugin dependencies for this run (one per line: "owner/repo [BRANCH]"
+          or "CLONE_URL [BRANCH]"). Leave empty to use .github/moodle-ci/dependencies as-is.
+        required: false
+        type: string
+
+# Required permissions for creating branches and pull requests.
+permissions:
+  contents: write          # required to create a branch and PR
+  pull-requests: write     # required to create a PR
+  security-events: write   # required to upload SARIF to code scanning
+
+jobs:
+  # --------------------------------------------------------------------------
+  # TEST JOB – runs all checks
+  # --------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-24.04
+
+    # Database services (only one is actually used per matrix entry).
+    services:
+      postgres:
+        image: ${{ matrix.database == 'pgsql' && 'postgres:17' || '' }}
+        env:
+          POSTGRES_USER: 'postgres'
+          POSTGRES_HOST_AUTH_METHOD: 'trust'
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+
+      mariadb:
+        image: ${{ matrix.database == 'mariadb' && 'mariadb:11' || '' }}
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MYSQL_CHARACTER_SET_SERVER: "utf8mb4"
+          MYSQL_COLLATION_SERVER: "utf8mb4_unicode_ci"
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval 10s --health-timeout 5s --health-retries 3
+
+    strategy:
+      fail-fast: false      # run all matrix legs even if one fails
+      matrix:
+        php: ['8.3']
+        moodle-branch: ['MOODLE_502_STABLE']
+        database: [mariadb]   # could be extended to pgsql if needed
+
+    steps:
+      # Checkout the plugin code into a subdirectory called "plugin".
+      - name: Check out repository code
+        uses: actions/checkout@v7
+        with:
+          path: plugin
+          persist-credentials: false   # we use a personal access token later
+
+      # Setup PHP with required extensions.
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          ini-values: max_input_vars=5000, opcache.enable_cli=1
+          coverage: none   # keep coverage disabled for speed
+
+      # Install moodle-plugin-ci tool and its dependencies.
+      - name: Initialise moodle-plugin-ci
+        env:
+          COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{secrets.github_token}}"} }'
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo "$(cd ci/bin; pwd)" >> "$GITHUB_PATH"
+          echo "$(cd ci/vendor/bin; pwd)" >> "$GITHUB_PATH"
+          sudo locale-gen en_AU.UTF-8
+          echo "NVM_DIR=$HOME/.nvm" >> "$GITHUB_ENV"
+
+      # Add extra plugin dependencies if specified (either via file or override).
+      - name: Add plugin dependencies
+        env:
+          DEPENDENCIES_OVERRIDE: ${{ github.event.inputs.dependencies_override }}
+        run: |
+          depsfile="./plugin/.github/moodle-ci/dependencies"
+
+          if [ -n "$DEPENDENCIES_OVERRIDE" ]; then
+            echo "Using workflow_dispatch dependencies_override input."
+            deps_source="$(mktemp)"
+            printf '%s\n' "$DEPENDENCIES_OVERRIDE" > "$deps_source"
+          elif [ -f "$depsfile" ]; then
+            echo "Using dependencies file: $depsfile"
+            deps_source="$depsfile"
+          else
+            echo "No $depsfile found and no override given, skipping."
+            deps_source=""
+          fi
+
+          if [ -n "$deps_source" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              trimmed="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              [ -z "$trimmed" ] && continue
+              case "$trimmed" in
+                '#'*) continue ;;
+              esac
+
+              spec="$(echo "$trimmed" | awk '{print $1}')"
+              branch="$(echo "$trimmed" | awk '{print $2}')"
+
+              args=()
+              if [ -n "$branch" ]; then
+                args+=(--branch "$branch")
+              fi
+
+              case "$spec" in
+                *://*|*.git|git@*)
+                  args+=(--clone "$spec")
+                  ;;
+                *)
+                  args+=("$spec")
+                  ;;
+              esac
+
+              echo "Running: moodle-plugin-ci add-plugin ${args[*]}"
+              moodle-plugin-ci add-plugin "${args[@]}"
+            done < "$deps_source"
+          fi
+
+      # Install Moodle and the plugin under test.
+      - name: Install moodle-plugin-ci
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 # DevSkim: ignore DS162092
+        env:
+          DB: ${{ matrix.database }}
+          MOODLE_BRANCH: ${{ matrix.moodle-branch }}
+
+      # Optionally add custom config lines from a file.
+      - name: Add custom config .github/moodle-ci/extra-config.php
+        run: |
+          configfile="./plugin/.github/moodle-ci/extra-config.php"
+          if [ -f "$configfile" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              trimmed="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              [ -z "$trimmed" ] && continue
+              case "$trimmed" in
+                '<?php'*|'#'*|'//'*) continue ;;
+              esac
+              echo "Adding config: $trimmed"
+              moodle-plugin-ci add-config "$trimmed"
+            done < "$configfile"
+          else
+            echo "No $configfile found, skipping extra config."
+          fi
+
+      # ---- Standard checks ----
+      - name: PHP Lint
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phplint
+
+      - name: PHP Copy/Paste Detector
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpcpd
+
+      - name: PHP Mess Detector
+        if: ${{ !cancelled() }}
+        run: |
+          rulesfile="$(pwd)/plugin/.github/moodle-ci/phpmd-exclusions.xml"
+          if [ -f "$rulesfile" ]; then
+            echo "Using custom phpmd ruleset: $rulesfile"
+            moodle-plugin-ci phpmd --rules="$rulesfile"
+          else
+            echo "No custom phpmd ruleset found, using default moodle ruleset."
+            moodle-plugin-ci phpmd
+          fi
+
+      - name: Moodle Code Checker
+        if: ${{ !cancelled() }}
+        run: |
+          standardfile="$(pwd)/plugin/.github/moodle-ci/phpcs-exclusions.xml"
+          if [ -f "$standardfile" ]; then
+            echo "Using custom phpcs standard: $standardfile"
+            moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings 0
+          else
+            echo "No custom phpcs standard found, using default moodle standard."
+            moodle-plugin-ci phpcs --max-warnings 0
+          fi
+
+      - name: Moodle PHPDoc Checker
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpdoc --max-warnings 0
+
+      - name: Validating
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci validate
+
+      - name: Check upgrade savepoints
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci savepoints
+
+      - name: Mustache Lint
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci mustache
+
+      - name: Grunt
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci grunt --max-lint-warnings 0
+
+      - name: PHPUnit tests
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpunit --fail-on-warning
+
+      - name: Behat features
+        id: behat
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci behat --profile chrome --scss-deprecations
+
+      - name: Upload Behat Faildump
+        if: ${{ failure() && steps.behat.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Behat Faildump
+          path: ${{ github.workspace }}/moodledata/behat_dump
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Mark cancelled jobs as failed.
+        if: ${{ cancelled() }}
+        run: exit 1
+
+  # --------------------------------------------------------------------------
+  # FIX-AND-PR JOB – runs once after all test legs finish
+  # --------------------------------------------------------------------------
+  fix-and-pr:
+    needs: test
+    if: ${{ always() }}   # run even if tests failed, so we can fix issues
+    runs-on: ubuntu-24.04
+
+    services:
+      # We only need MariaDB for the fixer job (same as the test leg).
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MYSQL_CHARACTER_SET_SERVER: "utf8mb4"
+          MYSQL_COLLATION_SERVER: "utf8mb4_unicode_ci"
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval 10s --health-timeout 5s --health-retries 3
+
+    steps:
+      # Checkout the plugin code.
+      - name: Check out repository code
+        uses: actions/checkout@v7
+        with:
+          path: plugin
+          persist-credentials: false
+
+      # Configure git identity for commits made by the bot.
+      - name: Configure git identity
+        run: |
+          cd plugin
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Setup PHP (same version as test).
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          ini-values: max_input_vars=5000, opcache.enable_cli=1
+          coverage: none
+
+      # Initialise moodle-plugin-ci (same as test job).
+      - name: Initialise moodle-plugin-ci
+        env:
+          COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{secrets.github_token}}"} }'
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo "$(cd ci/bin; pwd)" >> "$GITHUB_PATH"
+          echo "$(cd ci/vendor/bin; pwd)" >> "$GITHUB_PATH"
+          sudo locale-gen en_AU.UTF-8
+          echo "NVM_DIR=$HOME/.nvm" >> "$GITHUB_ENV"
+
+      # Add plugin dependencies (same as test).
+      - name: Add plugin dependencies
+        env:
+          DEPENDENCIES_OVERRIDE: ${{ github.event.inputs.dependencies_override }}
+        run: |
+          depsfile="./plugin/.github/moodle-ci/dependencies"
+
+          if [ -n "$DEPENDENCIES_OVERRIDE" ]; then
+            echo "Using workflow_dispatch dependencies_override input."
+            deps_source="$(mktemp)"
+            printf '%s\n' "$DEPENDENCIES_OVERRIDE" > "$deps_source"
+          elif [ -f "$depsfile" ]; then
+            echo "Using dependencies file: $depsfile"
+            deps_source="$depsfile"
+          else
+            echo "No $depsfile found and no override given, skipping."
+            deps_source=""
+          fi
+
+          if [ -n "$deps_source" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              trimmed="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              [ -z "$trimmed" ] && continue
+              case "$trimmed" in
+                '#'*) continue ;;
+              esac
+
+              spec="$(echo "$trimmed" | awk '{print $1}')"
+              branch="$(echo "$trimmed" | awk '{print $2}')"
+
+              args=()
+              if [ -n "$branch" ]; then
+                args+=(--branch "$branch")
+              fi
+
+              case "$spec" in
+                *://*|*.git|git@*)
+                  args+=(--clone "$spec")
+                  ;;
+                *)
+                  args+=("$spec")
+                  ;;
+              esac
+
+              echo "Running: moodle-plugin-ci add-plugin ${args[*]}"
+              moodle-plugin-ci add-plugin "${args[@]}"
+            done < "$deps_source"
+          fi
+
+      # Install Moodle and the plugin (same as test).
+      - name: Install moodle-plugin-ci
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 # DevSkim: ignore DS162092
+        env:
+          DB: mariadb
+          MOODLE_BRANCH: MOODLE_502_STABLE
+
+      # ----------------------------------------------------------------------
+      # Resolve the plugin's installed path and component name.
+      # This is needed because the plugin is installed into a subdirectory of
+      # moodle/public (e.g., lib/editor/tiny/plugins/fontfamily) and we need
+      # to sync fixes back to the checkout directory.
+      # We also capture the component name for the Grunt AMD build.
+      # ----------------------------------------------------------------------
+      - name: Resolve installed plugin directory
+        if: ${{ !cancelled() }}
+        run: |
+          # Read the component name as plain text rather than executing
+          # version.php. Executing it requires a real Moodle bootstrap:
+          # even with MOODLE_INTERNAL defined, plugins commonly reference
+          # constants like MATURITY_STABLE that only exist after Moodle's
+          # full setup.php has run, causing a fatal error here.
+          versionphp="${{ github.workspace }}/plugin/version.php"
+          component=$(grep -oP "component\s*=\s*['\"]\K[^'\"]+" "$versionphp" | head -n1)
+
+          if [ -z "$component" ]; then
+            echo "::error::Could not read component name from plugin/version.php"
+            exit 1
+          fi
+
+          # Find the version.php that declares this component inside the Moodle install.
+          versionfile=$(grep -rl "component[[:space:]]*=[[:space:]]*['\"]${component}['\"]" \
+            "${{ github.workspace }}/moodle/public" --include=version.php | head -n1)
+
+          if [ -z "$versionfile" ]; then
+            echo "::error::Could not resolve install path for component $component"
+            exit 1
+          fi
+
+          plugindir="$(dirname "$versionfile" | sed "s#^${{ github.workspace }}/moodle/public/##")"
+          echo "PLUGIN_INSTALL_DIR=$plugindir" >> "$GITHUB_ENV"
+          echo "PLUGIN_COMPONENT=$component" >> "$GITHUB_ENV"
+          echo "Resolved $component -> public/$plugindir"
+
+      # ----------------------------------------------------------------------
+      # FIXERS: each fixer runs, syncs changes back to the checkout, and
+      # commits its own changes (if any) immediately. This creates separate
+      # commits per tool, making it easy to cherry-pick.
+      # The --delete flag in rsync ensures that files removed by the fixer
+      # (e.g., obsolete build files) are also deleted from the checkout.
+      # ----------------------------------------------------------------------
+
+      # ---- PHP Code Beautifier and Fixer (phpcbf) ----
+      - name: Moodle Code Beautifier and Fixer
+        if: ${{ !cancelled() }}
+        run: |
+          standardfile="$(pwd)/plugin/.github/moodle-ci/phpcs-exclusions.xml"
+          if [ -f "$standardfile" ]; then
+            echo "Using custom phpcs standard: $standardfile"
+            moodle-plugin-ci phpcbf --standard="$standardfile"
+          else
+            echo "No custom phpcs standard found, using default moodle standard."
+            moodle-plugin-ci phpcbf
+          fi
+
+          # Guard against an unset/empty PLUGIN_INSTALL_DIR.
+          : "${PLUGIN_INSTALL_DIR:?PLUGIN_INSTALL_DIR is not set - did the resolve step fail?}"
+          rsync -av --delete "${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/." "${{ github.workspace }}/plugin/." --exclude='.git'
+
+          cd plugin
+          git add -A
+          if git diff --cached --quiet; then
+            echo "phpcbf made no changes, skipping commit."
+          else
+            git commit -m "phpcbf: automated code style fixes"
+          fi
+
+      # ---- ESLint --fix ----
+      - name: ESLint --fix
+        if: ${{ !cancelled() }}
+        run: |
+          cd ${{ github.workspace }}/moodle
+          set +e
+          ./node_modules/.bin/eslint --fix public/
+          eslint_exit=$?
+          set -e
+
+          if [ -z "$(git status --porcelain public/)" ]; then
+            echo "ESLint --fix made no changes; propagating its exit code ($eslint_exit)."
+            exit $eslint_exit
+          fi
+          echo "ESLint --fix modified files; ignoring its exit code ($eslint_exit)."
+
+          : "${PLUGIN_INSTALL_DIR:?PLUGIN_INSTALL_DIR is not set - did the resolve step fail?}"
+          rsync -av --delete "${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/." "${{ github.workspace }}/plugin/." --exclude='.git'
+
+          cd ${{ github.workspace }}/plugin
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No plugin-relevant ESLint changes, skipping commit."
+          else
+            git commit -m "eslint --fix: automated JS lint fixes"
+          fi
+
+      # ---- Stylelint --fix ----
+      - name: Stylelint --fix
+        if: ${{ !cancelled() }}
+        run: |
+          cd ${{ github.workspace }}/moodle
+          set +e
+          ./node_modules/.bin/stylelint --fix "public/**/*.scss"
+          stylelint_exit=$?
+          set -e
+
+          if [ -z "$(git status --porcelain public/)" ]; then
+            echo "Stylelint --fix made no changes; propagating its exit code ($stylelint_exit)."
+            exit $stylelint_exit
+          fi
+          echo "Stylelint --fix modified files; ignoring its exit code ($stylelint_exit)."
+
+          : "${PLUGIN_INSTALL_DIR:?PLUGIN_INSTALL_DIR is not set - did the resolve step fail?}"
+          rsync -av --delete "${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/." "${{ github.workspace }}/plugin/." --exclude='.git'
+
+          cd ${{ github.workspace }}/plugin
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No plugin-relevant Stylelint changes, skipping commit."
+          else
+            git commit -m "stylelint --fix: automated SCSS lint fixes"
+          fi
+
+      # ---- Rebuild AMD assets using targeted Grunt command ----
+      # This step runs only if the plugin has an 'amd' directory.
+      # It builds the AMD modules specifically for this plugin using
+      # `npx grunt amd --component=<component>`. This forces a rebuild
+      # of the .min.js and .map files and correctly handles files that
+      # are no longer generated (they are deleted).
+      - name: Rebuild AMD assets with Grunt
+        if: ${{ !cancelled() }}
+        run: |
+          # Check if the plugin has an amd directory.
+          if [ ! -d "${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/amd" ]; then
+            echo "No amd directory found, skipping AMD rebuild."
+            exit 0
+          fi
+
+          cd ${{ github.workspace }}/moodle
+          set +e
+          # Run the amd task for this specific component.
+          output=$(npx grunt amd --component=${{ env.PLUGIN_COMPONENT }} 2>&1)
+          grunt_exit=$?
+          set -e
+
+          # Grunt exits 1 when files are stale (after rebuilding them).
+          # If it exits with anything else (e.g., 2 for real error), fail the step.
+          if [ $grunt_exit -ne 0 ] && [ $grunt_exit -ne 1 ]; then
+            echo "Grunt failed with unexpected exit code $grunt_exit"
+            echo "$output"
+            exit $grunt_exit
+          fi
+
+          # Delete files that are no longer generated.
+          # Look for lines like: "File no longer generated and likely should be deleted: amd/build/functions.min.js"
+          echo "$output" | grep -oP "File no longer generated and likely should be deleted: \K[^\s]+" | while read -r file; do
+            fullpath="${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/$file"
+            if [ -f "$fullpath" ]; then
+              echo "Deleting obsolete file: $fullpath"
+              rm -f "$fullpath"
+            else
+              echo "File not found (already deleted?): $fullpath"
+            fi
+          done
+
+          # Check if any files were changed in the plugin's installed directory.
+          if [ -z "$(git status --porcelain "public/${PLUGIN_INSTALL_DIR}/")" ]; then
+            echo "Grunt made no changes to the plugin."
+          else
+            echo "Grunt modified plugin files."
+            : "${PLUGIN_INSTALL_DIR:?PLUGIN_INSTALL_DIR is not set - did the resolve step fail?}"
+            # Use --delete to remove files that are no longer generated (should now be removed from source).
+            rsync -av --delete "${{ github.workspace }}/moodle/public/${PLUGIN_INSTALL_DIR}/." "${{ github.workspace }}/plugin/." --exclude='.git'
+
+            cd ${{ github.workspace }}/plugin
+            git add -A
+            if git diff --cached --quiet; then
+              echo "No plugin-relevant changes after rsync, skipping commit."
+            else
+              git commit -m "grunt: rebuilt AMD assets"
+            fi
+          fi
+
+      # ----------------------------------------------------------------------
+      # Check if any of the fixers above produced commits.
+      # ----------------------------------------------------------------------
+      - name: Check for changes
+        id: check
+        run: |
+          cd plugin
+          if [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]; then
+            echo "changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changes=true" >> "$GITHUB_OUTPUT"
+            git diff --name-only "$BASE_SHA" HEAD > ../changed_files.txt
+            echo "Modified files:"
+            cat ../changed_files.txt
+          fi
+
+      # Prepare the pull request body with the list of changed files.
+      - name: Prepare PR body
+        if: ${{ !cancelled() && steps.check.outputs.changes == 'true' }}
+        run: |
+          {
+            echo "PR_BODY<<EOF"
+            echo "Moodle CI Fixes"
+            echo ""
+            echo "The following files were modified by the CI process:"
+            echo '```'
+            cat changed_files.txt
+            echo '```'
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      # Create the pull request (if changes exist).
+      - name: Create Pull Request
+        if: ${{ !cancelled() && steps.check.outputs.changes == 'true' }}
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: CI Fixes
+          title: Moodle CI Fixes
+          body: ${{ env.PR_BODY }}
+          branch: moodle-ci-fixes
+          path: plugin
+
+      # Fail the workflow if the test job failed (to propagate the failure
+      # even after automatic fixes have been applied).
+      - name: Fail workflow if tests failed
+        if: ${{ needs.test.result == 'failure' }}
+        run: exit 1
