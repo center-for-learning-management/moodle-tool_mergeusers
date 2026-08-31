@@ -253,19 +253,19 @@ final class user_merger {
          * role assignments should be transferred by the merge tool itself.
          */
         global $DB;
-        $roles = $DB->get_records('local_eduvidual_orgid_userid', array('userid' => $fromid));
-        foreach ($roles AS $fromrole) {
-            $torole = $DB->get_record('local_eduvidual_orgid_userid', array('orgid' => $fromrole->orgid, 'userid' => $toid));
+        $roles = $DB->get_records('local_eduvidual_orgid_userid', ['userid' => $fromid]);
+        foreach ($roles as $fromrole) {
+            $torole = $DB->get_record('local_eduvidual_orgid_userid', ['orgid' => $fromrole->orgid, 'userid' => $toid]);
             if (!empty($torole->id)) {
                 // We have a role, set the highest for $toid.
                 switch ($fromrole->role) {
                     case 'Manager':
-                        if (!in_array($torole->role, array('Manager'))) {
+                        if (!in_array($torole->role, ['Manager'])) {
                             \local_eduvidual\lib_enrol::role_set($toid, $torole->orgid, $fromrole->role, true);
                         }
                         break;
                     case 'Teacher':
-                        if (!in_array($torole->role, array('Manager', 'Teacher'))) {
+                        if (!in_array($torole->role, ['Manager', 'Teacher'])) {
                             \local_eduvidual\lib_enrol::role_set($toid, $torole->orgid, $fromrole->role, true);
                         }
                         break;
