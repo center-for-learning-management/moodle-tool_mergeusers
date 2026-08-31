@@ -247,11 +247,9 @@ final class user_merger {
      * @throws dml_transaction_exception
      */
     private function merge_users(int $toid, int $fromid): array {
-        /**
-         * Added by rschrenk, fix eduvidual-role first.
-         * We only add the roles in table orgid_userid directly. Any
-         * role assignments should be transferred by the merge tool itself.
-         */
+        // Added by rschrenk, fix eduvidual-role first.
+        // We only add the roles in table orgid_userid directly. Any
+        // role assignments should be transferred by the merge tool itself.
         global $DB;
         $roles = $DB->get_records('local_eduvidual_orgid_userid', ['userid' => $fromid]);
         foreach ($roles as $fromrole) {
@@ -278,9 +276,7 @@ final class user_merger {
                 \local_eduvidual\lib_enrol::role_set($toid, $fromrole->orgid, $fromrole->role, true);
             }
         }
-        /**
-         * End of modification
-         */
+        // End of modification.
 
         global $DB;
 

@@ -366,7 +366,7 @@ class generic_table_merger implements table_merger {
      * List the records candidate for being updated.
      *
      * @param array $data detail of merging
-     * @param string $fieldName field name to look for the user.id from the user to remove.
+     * @param string $fieldname field name to look for the user.id from the user to remove.
      * @return array list of matching records' ids.
      * @throws dml_exception
      */

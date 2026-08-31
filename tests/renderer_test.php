@@ -14,9 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+/**
+ * Renderer tests
+ *
+ * @package   tool_mergeusers
+ * @author    Matthew Hilton <matthewhilton@catalyst-au.net>
+ * @copyright 2025 Catalyst IT Australia
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
 namespace tool_mergeusers;
 
 use advanced_testcase;
+use tool_mergeusers\fixtures\in_memory_last_merge;
 use tool_mergeusers\output\renderer;
 use tool_mergeusers_renderer;
 
@@ -46,6 +56,7 @@ final class renderer_test extends advanced_testcase {
      * @throws \dml_exception
      */
     public function test_get_merge_detail_missing_user(): void {
+        require_once(__DIR__ . '/fixtures/in_memory_last_merge.php');
         // User does not exist, should contain 'unknown profile' lang string.
         $dummylog = (object) [
             'fromuserid' => -5,
@@ -69,6 +80,7 @@ final class renderer_test extends advanced_testcase {
      * @group tool_mergeusers_renderer
      */
     public function test_get_merge_detail_existing_user(): void {
+        require_once(__DIR__ . '/fixtures/in_memory_last_merge.php');
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
 
@@ -88,30 +100,5 @@ final class renderer_test extends advanced_testcase {
         $fullname = fullname($user);
         $displaytext = $this->get_renderer()->get_merge_detail($dummyuser, $lastmerge);
         $this->assertStringContainsString($fullname, $displaytext);
-    }
-}
-
-class in_memory_last_merge extends \tool_mergeusers\local\last_merge {
-    private int $userid;
-    private bool $suspended;
-    private mixed $tome;
-    private mixed $fromme;
-    public function __construct(int $userid, bool $suspended, mixed $tome, mixed $fromme) {
-        $this->userid = $userid;
-        $this->suspended = $suspended;
-        $this->tome = $tome;
-        $this->fromme = $fromme;
-    }
-
-    public function fromme(): null|\stdClass {
-        return $this->fromme;
-    }
-
-    public function tome(): null|\stdClass {
-        return $this->tome;
-    }
-
-    public function is_this_user_deletable(): bool {
-        return true;
     }
 }

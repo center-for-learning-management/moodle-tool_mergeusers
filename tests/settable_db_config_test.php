@@ -29,6 +29,8 @@ use tool_mergeusers\local\settable_db_config;
  */
 final class settable_db_config_test extends basic_testcase {
     /**
+     * Test that a settable_db_config is empty when constructed without settings.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_settable_db_config
      */
@@ -38,6 +40,8 @@ final class settable_db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that a settable_db_config is initialized with the given valid settings.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_settable_db_config
      */
@@ -49,9 +53,15 @@ final class settable_db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that a settable_db_config setting can (or cannot) be overridden after creation.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_settable_db_config
      * @dataProvider override_setting_provider
+     * @param string $settingname the name of the setting to test
+     * @param mixed $firstvalue the initial value of the setting
+     * @param mixed $secondvalue the value to attempt to override the setting with
+     * @param mixed $expectedvalue the value the setting is expected to have afterwards
      */
     public function test_config_override_specific_setting(
         string $settingname,

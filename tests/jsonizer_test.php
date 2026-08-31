@@ -43,6 +43,8 @@ final class jsonizer_test extends basic_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_jsonizer
      * @dataProvider to_json_provider
+     * @param mixed $valuetotest the value to encode as JSON
+     * @param string $expectedresult the expected JSON-encoded result
      */
     public function test_to_json($valuetotest, $expectedresult): void {
         $this->assertEquals($expectedresult, jsonizer::to_json($valuetotest));
@@ -72,6 +74,8 @@ final class jsonizer_test extends basic_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_jsonizer
      * @dataProvider from_json_provider
+     * @param string $valuetotest the JSON-encoded value to decode
+     * @param mixed $expectedresult the expected decoded result
      */
     public function test_from_json($valuetotest, $expectedresult): void {
         $this->assertEquals($expectedresult, jsonizer::from_json($valuetotest));

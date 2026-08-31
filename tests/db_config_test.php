@@ -29,6 +29,8 @@ use tool_mergeusers\local\db_config;
  */
 final class db_config_test extends basic_testcase {
     /**
+     * Test that a db_config is empty when constructed without settings.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -38,6 +40,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that a db_config is initialized with the given valid settings.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -48,6 +52,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that invalid settings are ignored and not considered part of the db_config.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -58,6 +64,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that merging content keeps the first settings when a key already exists.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -68,6 +76,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that merging content keeps the first array settings when values conflict.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -109,6 +119,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that merging with another db_config keeps the first settings when a key already exists.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */
@@ -119,6 +131,8 @@ final class db_config_test extends basic_testcase {
     }
 
     /**
+     * Test that db_config settings cannot be changed once initialized.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_db_config
      */

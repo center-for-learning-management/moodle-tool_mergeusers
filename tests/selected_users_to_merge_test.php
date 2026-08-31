@@ -31,6 +31,8 @@ use tool_mergeusers\local\user_merger;
  */
 final class selected_users_to_merge_test extends basic_testcase {
     /**
+     * Test that instantiating selected_users_to_merge creates the session attribute.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_selected_users
      */
@@ -47,6 +49,8 @@ final class selected_users_to_merge_test extends basic_testcase {
     }
 
     /**
+     * Test that the from and to users can be set and unset individually.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_selected_users
      */
@@ -72,6 +76,8 @@ final class selected_users_to_merge_test extends basic_testcase {
     }
 
     /**
+     * Test that clearing the selection unsets both selected users.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_selected_users
      */
