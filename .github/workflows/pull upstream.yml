@@ -17,7 +17,7 @@ env:
   # Required, URL to upstream (fork base)
   UPSTREAM_REPO: "jpahullo/moodle-tool_mergeusers"
   # which Branch to sync from upstream
-  UPSTREAM_BRANCH: "master"
+  UPSTREAM_BRANCH: "MOODLE_405_STABLE"
   PR_BASE_BRANCH: "master"
   PR_BRANCH: "PR_upstream"
   PR_ASSIGNEES: "lassnj"
