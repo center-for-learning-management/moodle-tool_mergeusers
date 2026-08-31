@@ -20,4 +20,4 @@
 # 10
 
 # Don't fail the build on warnings at all (errors still fail it):
-# -1
+-1
