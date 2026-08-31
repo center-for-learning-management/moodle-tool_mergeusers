@@ -108,9 +108,9 @@ missing or invalid:
     fi
 
     if [ -f "$standardfile" ]; then
-      moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings "$maxwarnings"
+      moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings="$maxwarnings"
     else
-      moodle-plugin-ci phpcs --max-warnings "$maxwarnings"
+      moodle-plugin-ci phpcs --max-warnings="$maxwarnings"
     fi
 ```
 
@@ -137,6 +137,12 @@ Notes:
   build).
 - If the file exists but doesn't contain a valid integer, CI logs a
   warning and falls back to `0`.
+- The workflow passes the value as `--max-warnings="$maxwarnings"`
+  (`=`, not a space). This matters for `-1`: moodle-plugin-ci's CLI
+  parser treats a space-separated value starting with `-` as another
+  option rather than the value of `--max-warnings`, which fails with
+  `The "--max-warnings" option requires a value.` Keep the `=` form if
+  you ever touch this step.
 
 As with `phpcs-exclusions.xml`, **add a short comment explaining why**
 if you're relaxing the threshold — it helps whoever revisits it later
