@@ -162,6 +162,7 @@ class renderer extends plugin_renderer_base
     /**
      * Builds and renders a user review table
      *
+     * @param int $step the current step of the merge wizard
      * @return string $reviewtable HTML of the review table section
      * @throws coding_exception
      */
@@ -410,6 +411,7 @@ class renderer extends plugin_renderer_base
      * @param int $userid
      * @param int $timemodified the time the merge occurred
      * @param int $logid id of log
+     * @param bool $success whether the merge succeeded
      * @return array Containing profile link, formatted timestamp and log link.
      * @throws coding_exception
      * @throws moodle_exception

@@ -54,6 +54,8 @@ final class gathering_merger {
     /**
      * Initializes the to process any incoming merging action through
      * any Gathering instance.
+     *
+     * @param user_merger $mut the user merger to use to perform each merge.
      */
     public function __construct(user_merger $mut) {
         $this->usermerger = $mut;

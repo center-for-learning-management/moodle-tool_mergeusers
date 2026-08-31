@@ -84,6 +84,8 @@ class json_setting extends admin_setting_configtextarea {
     /**
      * Writes the JSON content in human-readable content.
      *
+     * @param mixed $data the content to write
+     * @return string empty string on success; error message otherwise.
      * @throws coding_exception
      */
     public function write_setting($data) {

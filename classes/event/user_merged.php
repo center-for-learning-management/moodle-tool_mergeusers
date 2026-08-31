@@ -61,6 +61,7 @@ abstract class user_merged extends \core\event\base {
     /**
      * Human-readable detail of this event, given the result of the merge.
      *
+     * @param string $result the outcome word to include in the description (e.g. "success").
      * @return string
      */
     protected function get_description_as(string $result) {
