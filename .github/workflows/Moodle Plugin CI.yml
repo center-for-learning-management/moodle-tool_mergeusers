@@ -247,10 +247,10 @@ jobs:
 
           if [ -f "$standardfile" ]; then
             echo "Using custom phpcs standard: $standardfile"
-            moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings "$maxwarnings"
+            moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings="$maxwarnings"
           else
             echo "No custom phpcs standard found, using default moodle standard."
-            moodle-plugin-ci phpcs --max-warnings "$maxwarnings"
+            moodle-plugin-ci phpcs --max-warnings="$maxwarnings"
           fi
 
       - name: Moodle PHPDoc Checker
