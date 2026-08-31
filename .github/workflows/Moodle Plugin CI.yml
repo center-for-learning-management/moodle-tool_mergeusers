@@ -96,9 +96,15 @@ jobs:
           echo "NVM_DIR=$HOME/.nvm" >> "$GITHUB_ENV"
 
       # Add extra plugin dependencies if specified (either via file or override).
+      # Dependencies that resolve to github.com (either the "owner/repo" shorthand,
+      # or an explicit https/ssh clone URL pointing at github.com) are cloned using
+      # BOT_GITHUB_ACTION_PAT so private GitHub repositories can be added. Any other
+      # host (e.g. Bitbucket, GitLab, a self-hosted git server) is cloned with no
+      # token, exactly as given.
       - name: Add plugin dependencies
         env:
           DEPENDENCIES_OVERRIDE: ${{ github.event.inputs.dependencies_override }}
+          BOT_GITHUB_ACTION_PAT: ${{ secrets.BOT_GITHUB_ACTION_PAT }}
         run: |
           depsfile="./plugin/.github/moodle-ci/dependencies"
 
@@ -113,6 +119,29 @@ jobs:
             echo "No $depsfile found and no override given, skipping."
             deps_source=""
           fi
+
+          # Rewrites a github.com clone URL (https or ssh form) to embed
+          # BOT_GITHUB_ACTION_PAT for authentication. Non-github.com URLs are
+          # returned unchanged. Prints nothing if no token secret is configured,
+          # so callers fall back to the original, unauthenticated URL.
+          inject_github_token() {
+            local url="$1"
+            if [ -z "$BOT_GITHUB_ACTION_PAT" ]; then
+              echo "$url"
+              return
+            fi
+            case "$url" in
+              https://github.com/*|http://github.com/*)
+                echo "$url" | sed -E "s#^(https?)://github\.com/#\1://${BOT_GITHUB_ACTION_PAT}@github.com/#"
+                ;;
+              git@github.com:*)
+                echo "https://${BOT_GITHUB_ACTION_PAT}@github.com/${url#git@github.com:}"
+                ;;
+              *)
+                echo "$url"
+                ;;
+            esac
+          }
 
           if [ -n "$deps_source" ]; then
             while IFS= read -r line || [ -n "$line" ]; do
@@ -132,10 +161,17 @@ jobs:
 
               case "$spec" in
                 *://*|*.git|git@*)
-                  args+=(--clone "$spec")
+                  # Explicit clone URL: inject the token only if it points at github.com.
+                  args+=(--clone "$(inject_github_token "$spec")")
                   ;;
                 *)
-                  args+=("$spec")
+                  # "owner/repo" shorthand always resolves against github.com, so use
+                  # the token (if set) to also support private repositories here.
+                  if [ -n "$BOT_GITHUB_ACTION_PAT" ]; then
+                    args+=(--clone "https://${BOT_GITHUB_ACTION_PAT}@github.com/${spec}.git")
+                  else
+                    args+=("$spec")
+                  fi
                   ;;
               esac
 
@@ -300,9 +336,15 @@ jobs:
           echo "NVM_DIR=$HOME/.nvm" >> "$GITHUB_ENV"
 
       # Add plugin dependencies (same as test).
+      # Dependencies that resolve to github.com (either the "owner/repo" shorthand,
+      # or an explicit https/ssh clone URL pointing at github.com) are cloned using
+      # BOT_GITHUB_ACTION_PAT so private GitHub repositories can be added. Any other
+      # host (e.g. Bitbucket, GitLab, a self-hosted git server) is cloned with no
+      # token, exactly as given.
       - name: Add plugin dependencies
         env:
           DEPENDENCIES_OVERRIDE: ${{ github.event.inputs.dependencies_override }}
+          BOT_GITHUB_ACTION_PAT: ${{ secrets.BOT_GITHUB_ACTION_PAT }}
         run: |
           depsfile="./plugin/.github/moodle-ci/dependencies"
 
@@ -317,6 +359,29 @@ jobs:
             echo "No $depsfile found and no override given, skipping."
             deps_source=""
           fi
+
+          # Rewrites a github.com clone URL (https or ssh form) to embed
+          # BOT_GITHUB_ACTION_PAT for authentication. Non-github.com URLs are
+          # returned unchanged. Prints nothing if no token secret is configured,
+          # so callers fall back to the original, unauthenticated URL.
+          inject_github_token() {
+            local url="$1"
+            if [ -z "$BOT_GITHUB_ACTION_PAT" ]; then
+              echo "$url"
+              return
+            fi
+            case "$url" in
+              https://github.com/*|http://github.com/*)
+                echo "$url" | sed -E "s#^(https?)://github\.com/#\1://${BOT_GITHUB_ACTION_PAT}@github.com/#"
+                ;;
+              git@github.com:*)
+                echo "https://${BOT_GITHUB_ACTION_PAT}@github.com/${url#git@github.com:}"
+                ;;
+              *)
+                echo "$url"
+                ;;
+            esac
+          }
 
           if [ -n "$deps_source" ]; then
             while IFS= read -r line || [ -n "$line" ]; do
@@ -336,10 +401,17 @@ jobs:
 
               case "$spec" in
                 *://*|*.git|git@*)
-                  args+=(--clone "$spec")
+                  # Explicit clone URL: inject the token only if it points at github.com.
+                  args+=(--clone "$(inject_github_token "$spec")")
                   ;;
                 *)
-                  args+=("$spec")
+                  # "owner/repo" shorthand always resolves against github.com, so use
+                  # the token (if set) to also support private repositories here.
+                  if [ -n "$BOT_GITHUB_ACTION_PAT" ]; then
+                    args+=(--clone "https://${BOT_GITHUB_ACTION_PAT}@github.com/${spec}.git")
+                  else
+                    args+=("$spec")
+                  fi
                   ;;
               esac
 
