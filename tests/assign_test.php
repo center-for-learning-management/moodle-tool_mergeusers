@@ -15,10 +15,11 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information
+ * Unit tests for merging assignment grades.
  *
  * @package    tool_mergeusers
  * @author     Andrew Hancox <andrewdchancox@googlemail.com>
+ * @copyright  Universitat Rovira i Virgili (https://www.urv.cat)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -103,10 +104,10 @@ final class assign_test extends advanced_testcase {
 
     /**
      * Utility method to get the grade for a user.
-     * @param $user
-     * @param $assign
-     * @param $course
-     * @return testable_assign
+     * @param stdClass $user the user to get the grade for
+     * @param testable_assign $assign the assign instance
+     * @param stdClass $course the course the assign belongs to
+     * @return string the user's grade as a string
      */
     private function get_user_assign_grade($user, $assign, $course) {
         $gradebookgrades = \grade_get_grades($course->id, 'mod', 'assign', $assign->get_instance()->id, $user->id);

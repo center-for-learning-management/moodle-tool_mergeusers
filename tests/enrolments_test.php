@@ -20,10 +20,11 @@ use advanced_testcase;
 use tool_mergeusers\local\user_merger;
 
 /**
- * Version information
+ * Unit tests for merging user enrolments.
  *
  * @package    tool_mergeusers
  * @author     Andrew Hancox <andrewdchancox@googlemail.com>
+ * @copyright  Universitat Rovira i Virgili (https://www.urv.cat)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class enrolments_test extends advanced_testcase {

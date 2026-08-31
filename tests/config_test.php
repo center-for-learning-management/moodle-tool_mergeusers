@@ -33,6 +33,8 @@ use tool_mergeusers\local\jsonizer;
  */
 final class config_test extends advanced_testcase {
     /**
+     * Tests that config is initialized with only the default settings.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_config
      */
@@ -42,6 +44,8 @@ final class config_test extends advanced_testcase {
     }
 
     /**
+     * Tests that config is initialized with the default and custom settings merged.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_config
      */
@@ -53,6 +57,8 @@ final class config_test extends advanced_testcase {
     }
 
     /**
+     * Tests that config is initialized with the default and hook-provided settings merged.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_config
      */
@@ -64,6 +70,8 @@ final class config_test extends advanced_testcase {
     }
 
     /**
+     * Tests that config is initialized with the default, hook, and custom settings all merged.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_config
      */

@@ -15,9 +15,12 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * @author    Daniel Tomé <danieltomefer@gmail.com>
- * @copyright 2018 Servei de Recursos Educatius (http://www.sre.urv.cat)
- * @package tool_mergeusers
+ * Unit tests for merging duplicated assignment submissions.
+ *
+ * @package    tool_mergeusers
+ * @author     Daniel Tomé <danieltomefer@gmail.com>
+ * @copyright  2018 Servei de Recursos Educatius (http://www.sre.urv.cat)
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 use tool_mergeusers\local\merger\finder\in_memory_assign_submission_finder;
@@ -25,6 +28,9 @@ use tool_mergeusers\local\merger\duplicateddata\assign_submission_duplicated_dat
 use tool_mergeusers\local\merger\duplicateddata\duplicated_data;
 
 
+/**
+ * Tests for merging duplicated assignment submissions between an old and new user.
+ */
 final class assign_submission_duplicated_test extends advanced_testcase {
     /**
      * Should do nothing with new submission and remove old submission when old user has no content submission
@@ -33,6 +39,10 @@ final class assign_submission_duplicated_test extends advanced_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_assign_submission
      * @dataProvider remove_old_ignore_new_data_provider
+     * @param array $expectedtomodify submissions expected to be updated
+     * @param array $expectedtoremove submissions expected to be removed
+     * @param stdClass $oldusersubmission the old user's assignment submission
+     * @param stdClass $newusersubmission the new user's assignment submission
      */
     public function test_remove_old_ignore_new($expectedtomodify, $expectedtoremove, $oldusersubmission, $newusersubmission): void {
         $duplicateddata = $this->get_duplicated_data($oldusersubmission, $newusersubmission);
@@ -41,7 +51,7 @@ final class assign_submission_duplicated_test extends advanced_testcase {
         $this->assertEquals($duplicateddata->to_remove(), $expectedtoremove);
     }
 
-    public static function remove_old_ignore_new_data_provider() {
+    public static function remove_old_ignore_new_data_provider(): array {
         return [
                 "when old is a new submission, new is submitted" => [
                         [],
@@ -77,6 +87,10 @@ final class assign_submission_duplicated_test extends advanced_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_assign_submission
      * @dataProvider update_old_and_remove_new_data_provider
+     * @param array $expectedtomodify submissions expected to be updated
+     * @param array $expectedtoremove submissions expected to be removed
+     * @param stdClass $oldusersubmission the old user's assignment submission
+     * @param stdClass $newusersubmission the new user's assignment submission
      */
     public function test_update_old_and_remove_new($expectedtomodify, $expectedtoremove, $oldusersubmission, $newusersubmission): void {
         $duplicateddata = $this->get_duplicated_data($oldusersubmission, $newusersubmission);
@@ -85,7 +99,7 @@ final class assign_submission_duplicated_test extends advanced_testcase {
         $this->assertEquals($duplicateddata->to_remove(), $expectedtoremove);
     }
 
-    public static function update_old_and_remove_new_data_provider() {
+    public static function update_old_and_remove_new_data_provider(): array {
         return [
                 "when old is submitted" => [
                         [1 => 1],
@@ -114,6 +128,10 @@ final class assign_submission_duplicated_test extends advanced_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_assign_submission
      * @dataProvider update_first_and_remove_last_data_provider
+     * @param array $expectedtomodify submissions expected to be updated
+     * @param array $expectedtoremove submissions expected to be removed
+     * @param stdClass $oldusersubmission the old user's assignment submission
+     * @param stdClass $newusersubmission the new user's assignment submission
      */
     public function test_update_first_and_remove_last(
         $expectedtomodify,
@@ -127,7 +145,7 @@ final class assign_submission_duplicated_test extends advanced_testcase {
         $this->assertEquals($duplicateddata->to_remove(), $expectedtoremove);
     }
 
-    public static function update_first_and_remove_last_data_provider() {
+    public static function update_first_and_remove_last_data_provider(): array {
 
         return [
                 "when both submitted" => [
@@ -214,8 +232,10 @@ final class assign_submission_duplicated_test extends advanced_testcase {
     }
 
     /**
-     * @param $oldusersubmission
-     * @param $newusersubmission
+     * Builds the duplicated data for the given old and new user assignment submissions.
+     *
+     * @param stdClass $oldusersubmission the old user's assignment submission
+     * @param stdClass $newusersubmission the new user's assignment submission
      * @return duplicated_data
      */
     private function get_duplicated_data($oldusersubmission, $newusersubmission): duplicated_data {
