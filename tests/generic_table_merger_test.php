@@ -32,11 +32,19 @@ use xmldb_table;
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class generic_table_merger_test extends advanced_testcase {
+    /** @var int id of the user to keep in the merge. */
     public const USER_TO_KEEP = 1;
+
+    /** @var int id of the user to remove in the merge. */
     public const USER_TO_REMOVE = 2;
+
+    /** @var string name of the temporary table used for testing. */
     public const TABLE_NAME_FOR_TESTING = 'generic_table_merger_test';
 
+    /** @var array data passed to the generic_table_merger to perform the merge. */
     private array $datafortablemerger;
+
+    /** @var generic_table_merger the merger instance under test. */
     private generic_table_merger $merger;
 
     public function setUp(): void {
@@ -69,9 +77,13 @@ final class generic_table_merger_test extends advanced_testcase {
     }
 
     /**
+     * Test merging table records when there are no conflicting records.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_generic_tablemerger
      * @dataProvider without_conflicting_records_provider
+     * @param object|null $record an optional pre-existing record to insert before merging
+     * @param bool $withlog whether the merge is expected to produce a log entry
      * @throws dml_exception
      * @throws moodle_exception
      * @throws ddl_exception
@@ -145,9 +157,12 @@ final class generic_table_merger_test extends advanced_testcase {
     }
 
     /**
+     * Test merging table records when a conflicting record already exists.
+     *
      * @group tool_mergeusers
      * @group tool_mergeusers_generic_tablemerger
      * @dataProvider with_conflicting_records_provider
+     * @param bool $informedindex whether the compound index is informed in the merge data
      * @throws dml_exception
      * @throws moodle_exception
      */

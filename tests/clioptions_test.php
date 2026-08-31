@@ -23,6 +23,7 @@ use tool_mergeusers\local\user_merger;
  * @package    tool_mergeusers
  * @subpackage mergeusers
  * @author     Andrew Hancox <andrewdchancox@googlemail.com>
+ * @copyright  Universitat Rovira i Virgili (https://www.urv.cat)
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class clioptions_test extends advanced_testcase {

@@ -62,7 +62,7 @@ class json_setting extends admin_setting_configtextarea {
     /**
      * Check whether the content is a valid JSON content.
      *
-     * @param $data
+     * @param mixed $data the content to validate
      * @return bool|string string with the error message; true on valid content.
      * @throws coding_exception
      */

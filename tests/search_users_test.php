@@ -42,6 +42,9 @@ final class search_users_test extends advanced_testcase {
      * @group tool_mergeusers
      * @group tool_mergeusers_search_users
      * @dataProvider search_criteria
+     * @param string $searchfield the user field to search on
+     * @param string $input the search input
+     * @param int $count the expected number of matching users
      * @throws dml_exception
      * @throws coding_exception
      */
