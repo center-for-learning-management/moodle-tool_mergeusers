@@ -78,6 +78,70 @@ $x = array (1, 2, 3);
 // phpcs:enable Squiz.Arrays.ArrayBracketSpacing
 ```
 
+# Overriding the PHPCS warning threshold — `phpcs-maxwarnings`
+
+By default the workflow runs `moodle-plugin-ci phpcs --max-warnings 0`,
+which means **any** PHPCS warning fails the build, not just errors. If a
+plugin needs to tolerate a certain number of warnings (or ignore them
+entirely), it can override this via a `phpcs-maxwarnings` file, the same
+way `phpcs-exclusions.xml` overrides the PHPCS standard.
+
+## One-time setup
+
+In your workflow file, find the PHPCS step and read the value from the
+file instead of hard-coding `0`, falling back to `0` if the file is
+missing or invalid:
+
+```yaml
+- name: Moodle Code Checker
+  if: ${{ !cancelled() }}
+  run: |
+    standardfile="$(pwd)/plugin/.github/moodle-ci/phpcs-exclusions.xml"
+    maxwarningsfile="$(pwd)/plugin/.github/moodle-ci/phpcs-maxwarnings"
+
+    maxwarnings=0
+    if [ -f "$maxwarningsfile" ]; then
+      value="$(grep -vE '^[[:space:]]*(#|$)' "$maxwarningsfile" | head -n1 | tr -d '[:space:]')"
+      if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+        maxwarnings="$value"
+      fi
+    fi
+
+    if [ -f "$standardfile" ]; then
+      moodle-plugin-ci phpcs --standard="$standardfile" --max-warnings "$maxwarnings"
+    else
+      moodle-plugin-ci phpcs --max-warnings "$maxwarnings"
+    fi
+```
+
+## Adding an override
+
+Copy [`.github/moodle-ci/phpcs-maxwarnings-dist`](./phpcs-maxwarnings-dist)
+to `.github/moodle-ci/phpcs-maxwarnings` in the plugin repo and set it to
+the integer you want:
+
+```
+# Allow up to 10 warnings before the build fails
+10
+```
+
+Notes:
+
+- The file should contain a single integer on its own line. Blank lines
+  and lines starting with `#` are ignored, so you can keep explanatory
+  comments.
+- `0` (or omitting the file entirely) keeps the strict default: any
+  warning fails the build.
+- A positive number allows up to that many warnings.
+- `-1` disables the warning threshold entirely (errors still fail the
+  build).
+- If the file exists but doesn't contain a valid integer, CI logs a
+  warning and falls back to `0`.
+
+As with `phpcs-exclusions.xml`, **add a short comment explaining why**
+if you're relaxing the threshold — it helps whoever revisits it later
+understand whether it's still needed.
+
 # Excluding files from checks — `.moodle-plugin-ci.yml`
 
 `phpcs-exclusions.xml` above controls which **sniffs/rules** run. If you
