@@ -19,6 +19,6 @@ on:
  
 jobs:
   sync:
-    uses: center-for-learning-management/eduvidual-documentation/.github/shared-workflows/sync-upstream.yml@main
+    uses: center-for-learning-management/eduvidual-documentation/.github/workflows/sync-upstream.yml@main
     secrets:
       BOT_GITHUB_ACTION_PAT: ${{ secrets.BOT_GITHUB_ACTION_PAT }}
