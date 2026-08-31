@@ -12,13 +12,13 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/workflows/pull upstream.yml'
+      - '.github/workflows/pull-upstream.yml'
       - '.github/upstream/**'
     branches:
       - main
  
 jobs:
   sync:
-    uses: center-for-learning-management/eduvidual-documentation/.github/workflows/pull upstream.yml@master
+    uses: center-for-learning-management/eduvidual-documentation/.github/workflows/pull-upstream.yml@master
     secrets:
       BOT_GITHUB_ACTION_PAT: ${{ secrets.BOT_GITHUB_ACTION_PAT }}
