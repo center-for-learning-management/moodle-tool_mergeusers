@@ -1,5 +1,5 @@
 # Caller workflow - lives in the TARGET repository at:
-#   .github/workflows/pull_upstream.yml
+#   .github/workflows/pull-upstream.yml
 #
 # All settings live in .github/upstream/config.env in this same repo.
 # Adjust the "uses:" line below to point at your common repo + ref (branch/tag/sha).
